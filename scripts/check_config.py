@@ -76,8 +76,84 @@ if jc:
            else '  · job_cache 还没有，第一次找岗时会自动生成（约 40 秒）'))
 
 print()
-if ok:
-    print('配置检查通过，可以开始用了。')
+if not ok:
+    print('有项目没配好，按上面的提示改完再跑一次。')
+    sys.exit(1)
+
+# ---------- 环境检查 ----------
+print('\n=== 检查运行环境 ===\n')
+env_ok = True
+
+
+def check_env(name, cmd, hint, required=True):
+    global env_ok
+    import subprocess
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=20,
+                           encoding='utf-8', errors='replace')
+        out = (r.stdout or '').strip().splitlines()
+        ver = out[0] if out else ''
+        print(f'  ✓ {name}  {ver[:40]}')
+        return True
+    except Exception:
+        if required:
+            env_ok = False
+            print(f'  ✗ 缺少 {name}')
+            print(f'    → {hint}')
+        else:
+            print(f'  · 没有 {name}（做这步时会用到）')
+            print(f'    → {hint}')
+        return False
+
+
+import shutil as _shutil
+node = _shutil.which('node') or r'D:\nodejs\node.exe'
+check_env('Node.js', [node, '--version'], '装 Node.js 18 以上：https://nodejs.org')
+
+# Playwright 是否装好
+try:
+    import subprocess
+    r = subprocess.run([node, '-e', "require('playwright');console.log('ok')"],
+                       capture_output=True, text=True, timeout=30, cwd=REPO)
+    if 'ok' in (r.stdout or ''):
+        print('  ✓ Playwright 已安装')
+    else:
+        env_ok = False
+        print('  ✗ Playwright 没装')
+        print('    → 在 jobfxxk 目录里执行：npm install')
+except Exception:
+    env_ok = False
+    print('  ✗ Playwright 没装')
+    print('    → 在 jobfxxk 目录里执行：npm install')
+
+# pypdf
+try:
+    import pypdf
+    print(f'  ✓ pypdf {pypdf.__version__}')
+except ImportError:
+    env_ok = False
+    print('  ✗ 缺少 Python 库 pypdf')
+    print('    → 执行：pip install pypdf')
+
+# Word（导出 PDF 要用）
+try:
+    import subprocess
+    r = subprocess.run(['powershell', '-NoProfile', '-Command',
+                        '(New-Object -ComObject Word.Application).Version'],
+                       capture_output=True, text=True, timeout=30,
+                       encoding='utf-8', errors='replace')
+    v = (r.stdout or '').strip()
+    if v and v[0].isdigit():
+        print(f'  ✓ Microsoft Word {v}')
+    else:
+        print('  · 没检测到 Word（微调简历导出 PDF 时会用到）')
+        print('    → 装 Word 或 WPS，否则只能用内置模板')
+except Exception:
+    print('  · 没检测到 Word（微调简历导出 PDF 时会用到）')
+
+print()
+if env_ok:
+    print('配置和环境都没问题，可以开始用了。')
     sys.exit(0)
-print('有项目没配好，按上面的提示改完再跑一次。')
+print('环境还差东西，按上面的提示装完再跑一次。')
 sys.exit(1)

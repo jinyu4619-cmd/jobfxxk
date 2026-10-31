@@ -98,7 +98,7 @@ python scripts/check_config.py
 
 ## 阶段 0 · 启动检查
 
-读 `user/state.json` 和投递台账，给用户三行摘要：档案状态、台账待办、上次停在哪。
+读 `jobfxxk-data/user/state.json` 和投递台账，给用户三行摘要：档案状态、台账待办、上次停在哪。
 
 **状态文件格式**（每次阶段切换时更新，中断后可恢复）：
 
@@ -147,7 +147,7 @@ python scripts/check_config.py
 
 用户说要改，改完**重新完整念一遍**再确认，不能改一个字就当过。
 
-写 `user/experience.json`，每条 `status: confirmed`。
+写 `jobfxxk-data/user/experience.json`，每条 `status: confirmed`。
 
 > 详细规则见 `references/信息库规范.md`
 
@@ -177,12 +177,15 @@ python scripts/check_config.py
 ### 存储
 
 ```
-user/
+jobfxxk-data/user/
 ├── profile.json      普通信息（明文，本地）
 ├── sensitive.bin     敏感信息（DPAPI 加密，只有本机本人能解）
 ├── experience.json   经历
+├── state.json        当前进度（中断后可恢复）
 └── confirm-log.md    确认记录
 ```
+
+**都在仓库外面**，和 `jobfxxk` 平级。仓库文件夹永远是干净的。
 
 **敏感信息真实实现**（不是话术，`scripts/secure_store.py` 已跑通）：
 
@@ -244,7 +247,7 @@ python scripts/secure_store.py delete
 4. 生成锚点表：每个槽位的当前字数、占几行、**允许的字数窗口**
 5. 报告给用户：结构摘要、可编辑性判断、三项风险（字号超 6 层 / 同层级两种行距 / 缺结构区块）
 
-锚点表格式见 `user/锚点表.json`（本地生成，不进仓库）。生成命令：
+锚点表格式见 `jobfxxk-data/user/锚点表.json`（本地生成，不在仓库里）。生成命令：
 
 ```bash
 python scripts/make_anchors.py
