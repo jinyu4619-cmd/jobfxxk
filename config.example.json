@@ -1,0 +1,13 @@
+{
+  "_说明": "复制成 config.json 后填写自己的路径。config.json 不要提交到仓库。",
+  "name": "你的名字",
+  "master_docx": "D:/你的目录/简历库/docx/母版.docx",
+  "master_pdf": "D:/你的目录/简历库/pdf/母版.pdf",
+  "anchors": "D:/你的目录/jobfxxk/user/锚点表.json",
+  "resume_dir": "D:/你的目录/简历库",
+  "job_cache": "D:/你的目录/jobfxxk/data/jobs.json",
+  "tracker": "D:/你的目录/投递跟踪/投递跟踪总表.md",
+  "browser_name": "",
+  "browser_path": "",
+  "_browser 说明": "首次投递时脚本会扫描本机浏览器让你选，选完写回这两项，之后默认用它"
+}

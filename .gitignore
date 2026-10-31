@@ -1,0 +1,23 @@
+# 用户数据，绝不入库
+user/
+config.json
+data/
+jobfxxk-data/
+
+# 自动化浏览器的独立配置目录（含登录 Cookie，绝不能提交）
+browser-profile/
+browser.pid
+
+# 日志与缓存
+*.log
+__pycache__/
+*.pyc
+
+# 依赖
+node_modules/
+
+# 系统文件
+.DS_Store
+Thumbs.db
+~$*
+desktop.ini

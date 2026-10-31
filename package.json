@@ -1,0 +1,10 @@
+{
+  "name": "jobfxxk",
+  "version": "1.0.0",
+  "private": true,
+  "description": "秋招投递全流程：建档、标定模板、筛岗、按 JD 微调、填表、记账",
+  "engines": { "node": ">=18" },
+  "dependencies": {
+    "playwright": "^1.62.1"
+  }
+}
