@@ -20,7 +20,7 @@
 require('./ensure_deps.cjs');       // 依赖可能装在数据目录，先挂上搜索路径
 const { chromium } = require('playwright');
 const { launch } = require('./browser_config.cjs');
-const { config, dataDir } = require('./config.cjs');
+const { config, configPath, dataDir } = require('./config.cjs');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
@@ -138,6 +138,13 @@ const PULL = async ({ base, app, tableId, fieldNames, startOffset, pages, pageSi
 
 (async () => {
   const started = Date.now();
+  // 找不到配置就停：以前会默默退回默认目录，把数据写到别处，
+  // 用户看到「同步成功」却筛不出岗，比直接报错难查得多。
+  if (!configPath()) {
+    console.error('没找到 config.json。先跑 python scripts/setup.py --check 看缺什么。');
+    console.error('（以前这种情况会写到默认目录，看起来成功其实写错了地方）');
+    process.exit(2);
+  }
   const browser = await launch(chromium, { headless: true });
   const page = await (await browser.newContext()).newPage();
 

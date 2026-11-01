@@ -210,7 +210,7 @@ jobfxxk/
 │   ├── 问题库.md              网申字段清单、隐私分级
 │   ├── 岗位推荐.md            数据源、匹配打分、意向获取
 │   └── 投递台账.md            进度跟踪表
-├── scripts/                  21 个脚本（见下表）
+├── scripts/                  23 个脚本（见下表）
 ├── assets/template/          脱敏简历模板（docx + pdf，必须成套）
 ├── config.example.json
 └── package.json
@@ -223,6 +223,7 @@ jobfxxk/
 | `read_resume.py` | 把 docx / pdf 读成干净文本 |
 | `build_skill.py` | 打包成 .skill（发布用） |
 | `profile.py` | 个人档案：静态信息 + 经历库，只问缺的 |
+| `directions.py` | 从经历里推岗位方向，附依据 |
 | `verify.py` | 阶段验收：档案 / 简历 / 版式 / 台账 / 岗位库 / 待排版稿 |
 | `check_config.py` | 逐项检查配置与环境（setup.py 的详细版） |
 | `detect_browsers.py` | 扫描本机浏览器 |

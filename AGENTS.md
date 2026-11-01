@@ -47,6 +47,7 @@ python scripts/setup.py --check
 | 0 | 启动检查、断点恢复 | `setup.py --check` |
 | 1 | 把简历读成文本、逐段展示确认 | `read_resume.py`、`profile.py exp *` |
 | 2 | 建个人信息库（只问缺的） | `profile.py missing / set / mode / review` |
+| 2.5 | 定方向：从经历里推 3–4 个方向，问还有没有别的意向 | `directions.py` |
 | 3 | 定模板、标定行宽 | `make_anchors.py`、`compose.py` |
 | 4 | 现拉岗位库、筛岗、读 JD | `sync_jobs.cjs`、`translate_jobs.py`、`filter_jobs.py`、`fetch_jd.cjs` |
 | 5 | 定志愿 | 用户定 |

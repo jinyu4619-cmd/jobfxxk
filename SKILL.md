@@ -356,6 +356,32 @@ python scripts/verify.py profile
 
 ---
 
+## 阶段 2.5 · 定方向（信息库一确认完就做）
+
+信息库体检通过之后，**先定方向再找岗**，别拿着「运营」两个字就去筛一万条。
+
+```bash
+python scripts/directions.py --json
+```
+
+它从**已确认的经历**里推出 4 个方向，每个带两样东西：依据（哪几段经历撑得起）、筛岗关键词。
+
+把前三个做成按钮，加一个「其他」。同时问一句：**「还有别的意向吗？」**
+
+- 用户选了一个方向 → 只用这个方向的关键词去筛岗
+- 用户说「都看看」→ 几个方向的关键词合并
+- 用户写了别的（比如「我想做品牌」）→ 那个方向不在 `directions.py` 的目录里，直接按他说的词筛，不要硬塞回已有方向
+
+选完记下来：
+
+```bash
+python scripts/profile.py set --file 方向.json      # {"intent":{"directions":"user_ops,ai_product"}}
+```
+
+**方向必须来自 `directions.py` 的输出，不能你自己替他挑。** 脚本里没有的方向（用户自己提的）照他说的办，但要说明「这个方向没有经历直接支撑，筛出来的岗位可能匹配度低」。
+
+---
+
 ## 阶段 3 · 定模板
 
 **先问（用按钮）**：
@@ -808,6 +834,7 @@ python scripts/verify.py tracker
 | `scripts/read_resume.py` | 把 docx/pdf 读成干净文本（处理文本框、副本、PDF 字间空格） |
 | `scripts/compose.py` | 把经历灌进模板，产出 docx 进简历库（不导出 PDF） |
 | `scripts/profile.py` | 个人档案：静态信息、经历库、逐条确认 |
+| `scripts/directions.py` | 从已确认的经历里推岗位方向，附依据 |
 | `scripts/verify.py` | 阶段验收：档案 / 简历 / 版式 / 台账 / 岗位库 |
 | `scripts/detect_browsers.py` | 扫描本机已装浏览器，供用户选择 |
 | `scripts/secure_store.py` | 敏感信息 DPAPI 加密存储（save/load/keys/delete） |
