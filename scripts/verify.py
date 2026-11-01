@@ -173,6 +173,41 @@ def check_jobs():
     return finish('jobs', issues, rows=len(rows), synced_at=d.get('syncedAt'))
 
 
+# ---------- draft（用户排完版后的硬伤检查） ----------
+
+PLACEHOLDERS = ['李晓明', '某大学', '某公司', '某咨询', '某某', 'zhangsan',
+                '13800138000', '请填写', 'XXX', '示例']
+
+
+def check_draft(path):
+    if not os.path.exists(path):
+        return finish('draft', [f'找不到文件：{path}'])
+    import re, zipfile
+    try:
+        x = zipfile.ZipFile(path).read('word/document.xml').decode('utf-8', 'ignore')
+    except Exception as e:
+        return finish('draft', ['docx 打不开：' + str(e)[:80]])
+
+    paras = []
+    for p in re.findall(r'<w:p\b[^>]*>.*?</w:p>', x, re.S):
+        t = ''.join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', p))
+        paras.append(t)
+    full = ''.join(paras)
+    flat = re.sub(r'\s', '', full)
+
+    issues = []
+    left = [w for w in PLACEHOLDERS if w in flat]
+    if left:
+        issues.append('还有模板里的示例内容没换掉：' + '、'.join(left) + '——这些会被 HR 看到')
+    if not flat:
+        issues.append('文档里一个字都没有')
+    empty = sum(1 for t in paras if not t.strip())
+    if empty > 6:
+        issues.append(f'有 {empty} 个空段落，排完版后建议删掉')
+    return finish('draft', issues, chars=len(flat), paragraphs=len(paras),
+                  placeholders_left=left)
+
+
 def main():
     argv = sys.argv[1:]
     if not argv:
@@ -190,6 +225,10 @@ def main():
         return check_tracker()
     if cmd == 'jobs':
         return check_jobs()
+    if cmd == 'draft':
+        if len(argv) < 2:
+            sys.exit('用法：verify.py draft <待排版的.docx>')
+        return check_draft(argv[1])
     sys.exit(__doc__)
 
 

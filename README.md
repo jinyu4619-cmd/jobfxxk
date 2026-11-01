@@ -194,7 +194,7 @@ jobfxxk/
 │   ├── 问题库.md              网申字段清单、隐私分级
 │   ├── 岗位推荐.md            数据源、匹配打分、意向获取
 │   └── 投递台账.md            进度跟踪表
-├── scripts/                  18 个脚本（见下表）
+├── scripts/                  19 个脚本（见下表）
 ├── assets/template/          脱敏简历模板（docx + pdf，必须成套）
 ├── config.example.json
 └── package.json
@@ -205,7 +205,7 @@ jobfxxk/
 | `setup.py` | **启动入口**：检查状态、报告卡点、执行修复 |
 | `state.py` | 读写进度状态，断了能接上 |
 | `profile.py` | 个人档案：静态信息 + 经历库，只问缺的 |
-| `verify.py` | 阶段验收：档案 / 简历 / 版式 / 台账 / 岗位库 |
+| `verify.py` | 阶段验收：档案 / 简历 / 版式 / 台账 / 岗位库 / 待排版稿 |
 | `check_config.py` | 逐项检查配置与环境（setup.py 的详细版） |
 | `detect_browsers.py` | 扫描本机浏览器 |
 | `secure_store.py` | 敏感信息 DPAPI 加密存取 |
@@ -216,6 +216,7 @@ jobfxxk/
 | `fetch_jd.cjs` | 后台读 JD |
 | `browser.cjs` | 浏览器：launch / pages / dump / fill / upload / text / shot / close |
 | `fill_engine.py` | 窗口校验 + Word 替换 + 版面复验 |
+| `compose.py` | 把经历灌进内置模板，产出待排版 docx（不导出 PDF） |
 | `write_tracker.py` | 写投递台账、改状态 |
 | `paths.py` | 统一的路径解析 |
 | `config.cjs` | Node 侧的配置读取（与 paths.py 同一套规则） |
