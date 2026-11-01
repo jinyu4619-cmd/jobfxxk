@@ -120,6 +120,18 @@ python scripts/state.py set --phase "阶段 8 · 填表中" --company 某公司 
 
 解析成结构化条目：组织、角色、时间、做了什么、方法、结果、数字。
 
+### 先看有没有旧账
+
+开口问之前，先跑一次：
+
+```bash
+python scripts/profile.py exp list
+```
+
+- **有已确认的条目** → 念给用户：「你之前确认过 3 段，分别是……这次是补充新的，还是有要改的？」确认过的不重问
+- **有未确认的草稿** → 从草稿接着确认，不要重录
+- **空的** → 从头开始
+
 **确认分两轮，不做八轮：**
 
 **第一轮看全景**——按八个板块列出来，每条一行，标明各几段、共几个数字。问三件事：有没有漏的、有没有不对的、有没有不想放进去的。
@@ -130,7 +142,16 @@ python scripts/state.py set --phase "阶段 8 · 填表中" --company 某公司 
 
 用户说要改，改完**重新完整念一遍**再确认，不能改一个字就当过。
 
-写 `jobfxxk-data/user/experience.json`，每条 `status: confirmed`。
+### 落盘
+
+**中文一律写成 UTF-8 文件再传路径，不要用管道**——Windows 下管道会把中文转成 `?????`：
+
+```bash
+python scripts/profile.py exp set --file 草稿.json     # 写入/合并，返回 id
+python scripts/profile.py exp confirm exp_001          # 每条确认后单独跑
+```
+
+`confirm` 会自动写 `confirm-log.md`，记下谁在什么时候确认了哪条、包含哪些数字。**没确认的不许进简历。**
 
 > 详细规则见 `references/信息库规范.md`
 
@@ -141,6 +162,25 @@ python scripts/state.py set --phase "阶段 8 · 填表中" --company 某公司 
 网申要的字段一半简历上没有：学院名称、籍贯、身高体重、是否统招、应届往届、毕业具体日期、证件号、紧急联系人。**一次性问清，之后不再重复问。**
 
 **八板块**：基本信息 / 教育 / 实习与工作 / 项目 / 校园经历 / 获奖与证书 / 技能与语言 / 求职意向。**敏感信息单列一类。**
+
+### 只问缺的
+
+开口之前先跑：
+
+```bash
+python scripts/profile.py missing
+```
+
+返回 JSON，`required: true` 的才是必填。**只问这些，已经有的一个字都不要重问。**
+
+写完再跑一次确认缺口清零：
+
+```bash
+python scripts/profile.py set --file 档案.json     # 中文走文件，不要用管道
+python scripts/profile.py show                     # 人看的版本，敏感字段自动打码
+```
+
+档案字段按 `references/信息库规范.md` 的定义存，不要自己发明键名。
 
 ### 先问处理方式
 
@@ -160,7 +200,7 @@ python scripts/state.py set --phase "阶段 8 · 填表中" --company 某公司 
 ### 存储
 
 ```
-jobfxxk-data/user/
+数据目录/user/
 ├── profile.json      普通信息（明文，本地）
 ├── sensitive.bin     敏感信息（DPAPI 加密，只有本机本人能解）
 ├── experience.json   经历
@@ -168,13 +208,13 @@ jobfxxk-data/user/
 └── confirm-log.md    确认记录
 ```
 
-**都在仓库外面**，和 `jobfxxk` 平级。仓库文件夹永远是干净的。
+**都在仓库外面**，不和代码放一起。仓库文件夹永远是干净的。
 
 **敏感信息真实实现**（不是话术，`scripts/secure_store.py` 已跑通）：
 
 ```bash
-# 保存（从 stdin 读 JSON）
-echo '{"身份证号":"...","紧急联系人":"..."}' | python scripts/secure_store.py save
+# 保存（先写 UTF-8 文件，不要用管道——Windows 下中文会变成 ?????）
+python scripts/secure_store.py save --file 敏感.json
 
 # 只列字段名，不显示值（可以随时告诉用户存了什么）
 python scripts/secure_store.py keys
@@ -591,6 +631,7 @@ python scripts/write_tracker.py --list
 | `scripts/check_config.py` | 首次使用时检查 config.json 是否配好 |
 | `scripts/setup.py` | **启动入口**：检查状态、报告卡点、执行修复 |
 | `scripts/state.py` | 读写进度状态，断了能接上 |
+| `scripts/profile.py` | 个人档案：静态信息、经历库、逐条确认 |
 | `scripts/detect_browsers.py` | 扫描本机已装浏览器，供用户选择 |
 | `scripts/secure_store.py` | 敏感信息 DPAPI 加密存储（save/load/keys/delete） |
 | `scripts/make_anchors.py` | 标定模板，生成锚点表与字数窗口 |

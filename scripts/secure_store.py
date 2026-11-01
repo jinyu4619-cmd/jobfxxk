@@ -5,7 +5,8 @@
 文件拷到别的电脑、或换个 Windows 账户，都解不开。
 
 用法:
-  echo {json} | python scripts/secure_store.py save    # 加密保存（从 stdin 读 JSON）
+  python scripts/secure_store.py save --file 敏感.json   # 加密保存（UTF-8 文件，推荐）
+  echo {json} | python scripts/secure_store.py save      # 也支持管道，但中文可能被转成 ?????
   python scripts/secure_store.py keys                  # 只列字段名
   python scripts/secure_store.py load                  # 字段名 + 掩码值（默认，安全）
   python scripts/secure_store.py load --field 身份证号  # 取单个字段明文（会写进对话记录）
@@ -13,7 +14,7 @@
   python scripts/secure_store.py delete                # 删除
   python scripts/secure_store.py status                # 是否存在
 """
-import ctypes, json, os, sys
+import ctypes, io, json, os, sys
 from ctypes import wintypes
 
 sys.stdout.reconfigure(encoding='utf-8')
@@ -102,8 +103,17 @@ def main():
     args = sys.argv[2:]
 
     if cmd == 'save':
-        text = sys.stdin.read()
-        obj = json.loads(text)
+        if '--file' in args:
+            path = args[args.index('--file') + 1]
+            if not os.path.exists(path):
+                sys.exit(f'找不到输入文件：{path}')
+            text = io.open(path, encoding='utf-8-sig').read()
+        else:
+            text = sys.stdin.buffer.read().decode('utf-8-sig', errors='replace')
+        try:
+            obj = json.loads(text)
+        except Exception as e:
+            sys.exit('输入不是合法 JSON：' + str(e)[:80])
         save(obj)
 
     elif cmd == 'load':

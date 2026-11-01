@@ -109,6 +109,16 @@ def jobs_fresh_hours():
     return (time.time() - os.path.getmtime(cache)) / 3600
 
 
+def profile_missing_count():
+    """档案还缺几项必填。档案由对话逐条确认，不阻塞启动，但要报出来。"""
+    try:
+        r = subprocess.run([sys.executable, os.path.join(HERE, 'profile.py'), 'missing'],
+                           capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=30)
+        return json.loads(r.stdout).get('required_count', 0)
+    except Exception:
+        return None
+
+
 def build_state():
     done, missing = [], []
 
@@ -176,7 +186,8 @@ def build_state():
                 ask='可以开始了。你想投什么岗位？',
                 actions=[], done=done, missing=[],
                 data_dir=DATA_DIR, config_path=CFG_PATH,
-                jobs_cache_hours=round(cache_h, 1))
+                jobs_cache_hours=round(cache_h, 1),
+                profile_missing_required=profile_missing_count())
 
 
 # ---------- 各项动作 ----------
