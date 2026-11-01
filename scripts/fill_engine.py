@@ -4,7 +4,7 @@
 用法: python scripts/fill_engine.py <草稿.json> [--out 版名]
 草稿.json: [{"old": "原文片段", "new": "替换后文本", "why": "为什么改"}, ...]
 
-产出落在 config.resume_dir/微调版/ 下（docx + pdf 两份）。
+产出直接进简历库：docx 进 <resume_dir>/docx/，pdf 进 <resume_dir>/pdf/，文件名带版本名。
 中间文件放数据目录的 tmp/ 里，不落在仓库里，也不落会话临时目录。
 """
 import json, os, shutil, subprocess, sys

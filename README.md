@@ -102,7 +102,10 @@ Playwright、pypdf 这些依赖不用手动装，第一次跑会提示并代你�
 
 ## 完整跑一遍
 
-下面是整条链路涉及的全部命令。**正常情况下你不需要逐条敲**——说一句「开始」，agent 会通过这些脚本自己推进。这一节是给想手动控制的用户看的。
+下面是脚本层面的命令清单。交互层面还有收经历、建信息库、问意向这三段（阶段 1–2.5），
+那部分靠对话完成，没有对应的单条命令。
+
+整条链路涉及的全部命令。**正常情况下你不需要逐条敲**——说一句「开始」，agent 会通过这些脚本自己推进。这一节是给想手动控制的用户看的。
 
 ### 1. 选浏览器（可以跳过）
 
@@ -202,7 +205,8 @@ python scripts/write_tracker.py --list
 
 ```
 jobfxxk/
-├── SKILL.md                  主流程（11 个阶段）
+├── AGENTS.md                 Codex 的入口（精简版流程）
+├── SKILL.md                  主流程（阶段 0–11，另加 2.5 定方向）
 ├── references/
 │   ├── 排版规则.md            版式硬指标、模板标定、打印适配
 │   ├── 微调细则.md            按 JD 微调简历的规则与验收
@@ -224,7 +228,7 @@ jobfxxk/
 | `build_skill.py` | 打包成 .skill（发布用） |
 | `profile.py` | 个人档案：静态信息 + 经历库，只问缺的 |
 | `directions.py` | 从经历里推岗位方向，附依据 |
-| `verify.py` | 阶段验收：档案 / 简历 / 版式 / 台账 / 岗位库 / 待排版稿 |
+| `verify.py` | 阶段验收：档案 / 简历 / 版式 / 台账 / 岗位库 / 草稿 |
 | `check_config.py` | 逐项检查配置与环境（setup.py 的详细版） |
 | `detect_browsers.py` | 扫描本机浏览器 |
 | `secure_store.py` | 敏感信息 DPAPI 加密存取 |
@@ -235,7 +239,7 @@ jobfxxk/
 | `fetch_jd.cjs` | 后台读 JD |
 | `browser.cjs` | 浏览器：launch / pages / dump / fill / upload / text / shot / close |
 | `fill_engine.py` | 窗口校验 + Word 替换 + 版面复验 |
-| `compose.py` | 把经历灌进内置模板，产出待排版 docx（不导出 PDF） |
+| `compose.py` | 把经历灌进内置模板，产出 docx 进简历库（不导出 PDF） |
 | `write_tracker.py` | 写投递台账、改状态 |
 | `paths.py` | 统一的路径解析 |
 | `config.cjs` | Node 侧的配置读取（与 paths.py 同一套规则） |

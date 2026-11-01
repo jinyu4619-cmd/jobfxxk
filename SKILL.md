@@ -227,7 +227,7 @@ python scripts/profile.py exp next --confirm exp_001 --metrics "20%,80%,95%,10+,
 
 ```bash
 python scripts/profile.py exp set --file 草稿.json     # 写入/合并，返回 id
-python scripts/profile.py exp confirm exp_001 --metrics "80%,95%"   # 逐条确认
+python scripts/profile.py exp next --confirm exp_001 --metrics "80%,95%"   # 确认上一段，同时给下一段
 ```
 
 `confirm` 这一步有硬闸：**这条经历只要有数字，必须带 `--metrics`**，把刚才逐个数念给用户、他确认过的数字报回来。脚本会跟记录里的数字比对，少一个、错一个都拒绝确认——这样「数字核过」才有痕迹，不是嘴上说说。
@@ -288,7 +288,7 @@ python scripts/profile.py show                     # 人是看的版本，敏感
 - **我只填常规信息，证件号和紧急联系人每次你自己输**（推荐，默认选中）
 - **全部你自己填，我只提示该填什么**
 
-点了之后记下来：`python scripts/profile.py mode A|B|C`。选 B 之后，`missing` 里不会再把敏感项当缺口问，只在填表时提醒。
+点了之后记下来：`python scripts/profile.py mode A|B|C`（A=全部代填 B=只填常规 C=全自己填）。选 B 之后，`missing` 里不会再把敏感项当缺口问，只在填表时提醒。
 
 ### 最后整体念一遍
 
@@ -398,7 +398,7 @@ python scripts/profile.py set --file 方向.json      # {"intent":{"directions":
 - **用内置的** —— 单页、六个字号、时间右对齐、有照片位。先给他看样例
 - **用我自己的** —— 需要提供 Word 版（PDF 有就给，没有我导）
 
-### 选 B 的准入条件
+### 用自己的模板时的准入条件
 
 **docx 是主，PDF 是附。** docx 是编辑源（微调只改它），PDF 定版式基准、也是要交给 HR 打印的那份。
 
@@ -463,7 +463,7 @@ python scripts/compose.py --draft 填充稿.json
 
 1. **给用户模板文件路径，让他自己改**——
    > 内置模板的位置是 `assets/template/简历模板.docx`，你用 Word 打开，把不需要的那段删掉、或者复制一段改成你的经历。改完另存一份，告诉我路径，我按新的标定。
-2. **让用户提供自己排好版的简历**——按上面「选 B」的准入条件走（docx + PDF 成对）。
+2. **让用户提供自己排好版的简历**——按上面「用自己的模板」的准入条件走（Word 为主，PDF 有就给、没有我导）。
 
 **永远不要把用户的第 4 段经历丢掉、也不要挤进原本装 3 段的版式**——那样出来的东西版面一定坏。
 
@@ -726,6 +726,10 @@ node scripts/browser.cjs shot now.png
 填完一块就读一遍当前值，和预期比对。有出入就当场说，不要攒到最后。
 
 必要时截图给用户看当前页面状态——截图比描述准。
+
+**填完关键区块先点「暂存」。** 网站的表单是内存里的，页面一被导航走、或者标签被关掉，填的全没了，也没法恢复。这一步不是可选项——我在真实投递里丢过一次，五段经历、教育、自我评价全都要重填。
+
+**同一时间只动一个标签。** 点职位卡片、点「立即投递」都可能新开标签页。正确姿势是捕获新标签（`ctx.waitForEvent('page')`）并在用完后关掉；或者干脆用 `node scripts/browser.cjs open <地址>` 在同一个标签里导航，`close-tabs` 清理多余标签。我因为反复点卡片、又用 `pages()[0]` 取错标签，一次投递开出了五个一模一样的窗口。
 
 ### 8.6 内推码
 

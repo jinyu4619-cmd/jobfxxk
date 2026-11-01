@@ -32,5 +32,5 @@
   "_browser": "运行 detect_browsers.py 会把本机浏览器列出来，选一个填这两项。留空也能跑：默认用系统自带的 Edge，再退 Chrome，最后用 Playwright 内置内核。",
 
   "work_dir": "",
-  "_work_dir": "微调产出的 docx/pdf 放哪。留空默认放 resume_dir/微调版/。"
+  "_work_dir": "留空即可。产出默认进 resume_dir 下的 docx/ 和 pdf/。"
 }

@@ -230,7 +230,7 @@ def main():
         return check_jobs()
     if cmd == 'draft':
         if len(argv) < 2:
-            sys.exit('用法：verify.py draft <待排版的.docx>')
+            sys.exit('用法：verify.py draft <要检查的.docx>')
         return check_draft(argv[1])
     sys.exit(__doc__)
 

@@ -21,7 +21,7 @@
 规则:
   - replace 的每条都要落在锚点窗口里，超窗的直接拒绝，不写
   - extra 不参与窗口校验，但会在文档末尾生成一个文本框，由用户自己拖到位
-  - 产出落在 <resume_dir>/待排版/
+  - 产出直接进 <resume_dir>/docx/，排完版导出的 PDF 放 <resume_dir>/pdf/
 """
 import json, os, shutil, subprocess, sys
 sys.stdout.reconfigure(encoding='utf-8')
