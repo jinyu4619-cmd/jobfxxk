@@ -51,6 +51,45 @@ async function currentPage(browser) {
   return pages[pages.length - 1];
 }
 
+/** 在**已有的同一个标签**里打开网址：已经有了就切过去，没有就复用当前标签导航。
+ *  北森的职位卡片是 target=_blank，点一次会新开一个标签，所以脚本不要靠点点点，
+ *  拿到详情页地址后一律用 open 复用标签，避免越点越多。 */
+async function cmdOpen(url) {
+  if (!url) die('用法: browser.cjs open <网址>');
+  const browser = await connect();
+  const ctx = browser.contexts()[0];
+  const pages = ctx.pages();
+
+  const same = pages.find(p => p.url() === url);
+  if (same) {
+    await same.bringToFront();
+    log('这个地址已经开着，切过去了：' + url);
+    process.exit(0);
+  }
+  const blank = pages.find(p => p.url() === 'about:blank');
+  const page = blank || pages[pages.length - 1];
+  await page.goto(url, { waitUntil: 'domcontentloaded' }).catch(() => {});
+  log('已打开：' + page.url() + `（当前共 ${ctx.pages().length} 个标签）`);
+  process.exit(0);
+}
+
+/** 关掉多余标签，只留一个。参数是可选的「保留哪个」的地址片段 */
+async function cmdCloseTabs(keep) {
+  const browser = await connect();
+  const ctx = browser.contexts()[0];
+  const pages = ctx.pages();
+  let keepPage = keep ? pages.find(p => p.url().includes(keep)) : pages[0];
+  if (!keepPage) keepPage = pages[0];
+  let closed = 0;
+  for (const p of pages) {
+    if (p === keepPage) continue;
+    await p.close().catch(() => {});
+    closed++;
+  }
+  log(`关掉 ${closed} 个标签，保留：` + keepPage.url());
+  process.exit(0);
+}
+
 async function cdpAlive() {
   try {
     const r = await fetch(`http://127.0.0.1:${PORT}/json/version`);
@@ -220,6 +259,8 @@ async function cmdPages() {
     case 'text': await cmdText(arg); break;
     case 'shot': await cmdShot(arg); break;
     case 'pages': await cmdPages(); break;
+    case 'open': await cmdOpen(arg); break;
+    case 'close-tabs': await cmdCloseTabs(arg); break;
     case 'close': {
       // 只杀本脚本启动的那个进程树，绝不按进程名批量杀（那样会连用户日常浏览器一起关掉）
       let pid = null;
