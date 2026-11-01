@@ -112,6 +112,9 @@ def load_sensitive():
 
 
 def save_sensitive(d):
+    if os.name != 'nt':
+        sys.exit('这台机器不是 Windows，敏感信息的 DPAPI 加密用不了。\n'
+                 '可以只填常规信息（P2），证件号这类留到填表时自己输；或者换到 Windows 上跑。')
     with redirect_stdout(io.StringIO()):     # secure_store.save 会打印，这里不需要
         ss.save(d)
 

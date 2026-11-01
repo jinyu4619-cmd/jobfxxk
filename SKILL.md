@@ -36,10 +36,12 @@ description: 把秋招投递从头做到尾。用户给出简历或口述经历�
 | 方式 | 适用 | 怎么装 |
 |---|---|---|
 | `.skill` 文件 | Claude 桌面版 | 下载后点「保存技能」 |
-| `git clone` | Claude Code | 克隆到 `~/.claude/skills/jobfxxk` |
-| 解压运行 | 只用脚本 | 解压到任意目录，跑 `python scripts/setup.py --check` |
+| `git clone` | Claude Code / Codex | 克隆到 skills 目录，或任意目录（Codex 读根目录的 `AGENTS.md`） |
+| 解压运行 | 任何环境 | 解压到任意目录，跑 `python scripts/setup.py --check` |
 
 装成 skill 之后，代码在应用托管的目录里，**个人数据不跟着代码走**：配置、锚点表、岗位缓存都放在数据目录（默认是用户主目录下的 `jobfxxk-data`），升级不会覆盖。
+
+**给 Codex 用**：仓库根目录的 `AGENTS.md` 是入口，内容比 SKILL.md 精简，只写「怎么开始」和铁律，细节指向 SKILL.md 和 `references/`。两个模型读的是同一套脚本，行为一致。
 
 ---
 

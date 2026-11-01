@@ -17,7 +17,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
 INCLUDE_DIRS = ['scripts', 'references', 'assets']
-INCLUDE_FILES = ['SKILL.md', 'README.md', 'LICENSE', 'config.example.json', 'package.json']
+INCLUDE_FILES = ['SKILL.md', 'AGENTS.md', 'README.md', 'LICENSE', 'config.example.json', 'package.json']
 SKIP_DIRS = {'__pycache__', 'node_modules', '.git', 'data', 'user', 'dist', 'docs',
              'browser-profile', '待排版', '微调版'}
 SKIP_FILES = {'config.json', '.DS_Store', 'Thumbs.db'}
@@ -45,7 +45,9 @@ def collect():
 def check(files):
     problems = []
     if 'SKILL.md' not in files:
-        problems.append('根目录没有 SKILL.md，装不成技能')
+        problems.append('根目录没有 SKILL.md，Claude 端装不成技能')
+    if 'AGENTS.md' not in files:
+        problems.append('根目录没有 AGENTS.md，Codex 端没有入口')
     need = ['scripts/setup.py', 'scripts/profile.py', 'scripts/read_resume.py',
             'scripts/compose.py', 'scripts/verify.py', 'scripts/fill_engine.py',
             'scripts/sync_jobs.cjs', 'scripts/browser.cjs',

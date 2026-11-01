@@ -1,6 +1,6 @@
 # jobfxxk
 
-把秋招投递从头做到尾的 Claude skill。
+把秋招投递从头做到尾的 skill。Claude 和 Codex 都能用。
 
 给它一份简历或者几段口述，它帮你整理成信息库、按 JD 微调简历（**保证版式和你原来的一模一样**）、从一万多条岗位里筛出匹配的、打开招聘官网把表单填好，最后记进投递台账。
 
@@ -31,12 +31,15 @@
 
 下载 Release 里的 `jobfxxk.skill`，双击或在应用里打开，点「保存技能」。
 
-### 方式二：从 GitHub 克隆（Claude Code）
+### 方式二：从 GitHub 克隆（Claude Code / Codex）
 
 ```bash
-cd ~/.claude/skills
 git clone https://github.com/jinyu4619-cmd/jobfxxk.git
 ```
+
+Claude Code 放进 `~/.claude/skills/jobfxxk` 就会自动加载。Codex 不需要放特定位置，克隆到哪都行——它读仓库根目录的 `AGENTS.md`，那里面写了怎么开始、有哪些硬规矩，细节指向 `SKILL.md`。
+
+两个客户端跑的是同一套脚本，行为一致。区别只在入口文件：Claude 读 `SKILL.md`，Codex 读 `AGENTS.md`。
 
 ### 方式三：只用脚本
 
