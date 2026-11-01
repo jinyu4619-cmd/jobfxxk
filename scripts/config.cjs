@@ -13,8 +13,14 @@ const REPO = path.resolve(__dirname, '..');
 function configPath() {
   const cands = [];
   if (process.env.JOBFXXK_CONFIG) cands.push(process.env.JOBFXXK_CONFIG);
-  cands.push(path.join(path.dirname(REPO), 'jobfxxk-data', 'config.json'));
-  cands.push(path.join(REPO, 'config.json'));
+  // 与 paths.py 保持一致：指定了数据目录就只认它，避免 Node 脚本和 Python 脚本
+  // 读到不同的配置（曾导致同步写进了另一套目录）
+  if (process.env.JOBFXXK_DATA) {
+    cands.push(path.join(process.env.JOBFXXK_DATA, 'config.json'));
+  } else {
+    cands.push(path.join(path.dirname(REPO), 'jobfxxk-data', 'config.json'));
+    cands.push(path.join(REPO, 'config.json'));
+  }
   for (const p of cands) {
     try { if (p && fs.existsSync(p)) return p; } catch (e) { /* ignore */ }
   }
