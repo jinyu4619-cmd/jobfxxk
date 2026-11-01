@@ -1,4 +1,4 @@
-# -*- coding: utf-8 -*-
+﻿# -*- coding: utf-8 -*-
 """个人信息库：普通信息进 profile.json，敏感信息进 DPAPI 加密文件
 
 字段表以 `references/问题库.md` 为准，分三级：
@@ -173,7 +173,7 @@ def cmd_show(_):
         if v in (None, '', []):
             continue
         shown += 1
-        print(f'{label}：{mask(v) if level in SENSITIVE_LEVELS else v}')
+        print(f'{label}：{mask(v) if level == 'P0' else v}')
     if not shown:
         print('还没有档案。')
 
@@ -289,7 +289,7 @@ def cmd_review(_):
         v = dig(flat, path)
         if v in (None, '', []):
             continue
-        print(f'  {label}：{mask(v) if level in SENSITIVE_LEVELS else v}')
+        print(f'  {label}：{mask(v) if level == 'P0' else v}')
     p = load(PROFILE, {})
     p['_reviewed_at'] = datetime.now().astimezone().isoformat(timespec='seconds')
     save(PROFILE, p)
@@ -367,6 +367,32 @@ def cmd_exp_confirm(argv):
     print(f'{eid} 已确认，记进 confirm-log。')
 
 
+def cmd_exp_next(argv):
+    """确认上一段 + 直接给下一段，一次调用走完一个来回
+
+    用法：exp next [--confirm exp_001 --metrics "80%,95%"]
+    没有 --confirm 就只是取下一段。
+    """
+    if '--confirm' in argv:
+        i = argv.index('--confirm')
+        if i + 1 < len(argv):
+            sub = ['confirm', argv[i + 1]]
+            if '--metrics' in argv:
+                sub += ['--metrics', argv[argv.index('--metrics') + 1]]
+            cmd_exp_confirm(sub)
+
+    exps = load(EXP, [])
+    todo = [e for e in exps if e.get('status') != 'confirmed']
+    done = len(exps) - len(todo)
+    if not todo:
+        print(json.dumps({'done': True, 'total': len(exps)}, ensure_ascii=False))
+        return
+    e = todo[0]
+    out = dict(e)
+    out.update({'index': done + 1, 'total': len(exps), 'done': False})
+    print(json.dumps(out, ensure_ascii=False, indent=1))
+
+
 def cmd_check(_):
     issues = []
     for x in missing():
@@ -408,6 +434,8 @@ def main():
             return cmd_exp_set(None)
         if sub == 'confirm':
             return cmd_exp_confirm(argv)
+        if sub == 'next':
+            return cmd_exp_next(argv[2:])
     sys.exit(__doc__)
 
 
