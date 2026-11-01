@@ -27,9 +27,9 @@ PROBE = r'''
 const { chromium } = require('playwright');
 const { launch } = require('./browser_config.cjs');
 const zlib = require('zlib');
-const APP = 'OGPubC12daD6HlsNcpwc7mR4nCd';
-const BASE = 'https://acn8c93z7tds.feishu.cn';
-const TABLE = 'tblFNPEDJ2kHQGc4';
+const APP = '__APP__';
+const BASE = '__BASE__';
+const TABLE = '__TABLE__';
 (async () => {
   const b = await launch(chromium, { headless: true });
   const page = await (await b.newContext()).newPage();
@@ -44,10 +44,18 @@ const TABLE = 'tblFNPEDJ2kHQGc4';
       }
     } catch (e) {}
   });
-  for (const tid of [TABLE, 'tblkwb9UTNkcvFpz', 'tblBBEYMOBVzKv8D']) {
-    await page.goto(BASE + '/base/' + APP + '?table=' + tid, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+  // 元数据是页面自己请求的，不一定会立刻到；最多试三次，抓到就停
+  for (let i = 0; i < 3 && !metas[TABLE]; i++) {
+    await page.goto(BASE + '/base/' + APP + '?table=' + TABLE, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
     await page.waitForTimeout(9000);
-    if (metas[TABLE]) break;
+  }
+  if (!metas[TABLE]) {
+    for (const tid of ['__REF__', '__MAJ__']) {
+      if (!tid) continue;
+      await page.goto(BASE + '/base/' + APP + '?table=' + tid, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+      await page.waitForTimeout(9000);
+      if (metas[TABLE]) break;
+    }
   }
   await b.close();
   const m = metas[TABLE];
@@ -77,7 +85,14 @@ def main():
     if not os.path.exists(CACHE):
         sys.exit('岗位缓存不存在，先跑 node scripts/sync_jobs.cjs --only=jobs')
 
-    open(PROBE_PATH, 'w', encoding='utf-8').write(PROBE)
+    src = CFG.get('job_source') or {}
+    probe = (PROBE
+             .replace('__APP__', src.get('app') or 'OGPubC12daD6HlsNcpwc7mR4nCd')
+             .replace('__BASE__', src.get('base') or 'https://acn8c93z7tds.feishu.cn')
+             .replace('__TABLE__', src.get('jobs') or 'tblFNPEDJ2kHQGc4')
+             .replace('__REF__', src.get('referrals') or 'tblkwb9UTNkcvFpz')
+             .replace('__MAJ__', src.get('majors') or 'tblBBEYMOBVzKv8D'))
+    open(PROBE_PATH, 'w', encoding='utf-8').write(probe)
     env = dict(os.environ)
     env['NODE_PATH'] = os.path.join(ROOT, 'node_modules')   # 不覆盖成空字符串
     try:

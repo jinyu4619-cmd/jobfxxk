@@ -16,7 +16,10 @@
   }
 
 状态按顺序检查，一次只返回最靠前的一个：
-  no_node → no_resume → no_deps → no_anchors → no_jobs → ready
+  no_node → no_resume → no_deps → no_anchors → ready
+
+岗位库不在状态机里：那张表是实时更新的，每次找岗前现拉，
+本地缓存只是中间产物，不算「就绪」的前提。
 """
 import json, os, shutil, subprocess, sys
 sys.stdout.reconfigure(encoding='utf-8')
@@ -145,8 +148,9 @@ def build_state():
     (done if ok else missing).append('resume')
     anchors = path_or('anchors', os.path.join('user', '锚点表.json'))
     (done if os.path.exists(anchors) else missing).append('anchors')
+    # 岗位库不进「就绪」门槛：那张表是实时更新的，每次找岗前现拉，
+    # 本地缓存只是中间产物，不该被当成必须存在的资产。
     cache_h = jobs_fresh_hours()
-    (done if cache_h is not None else missing).append('jobs')
 
     if not ok:
         return dict(status='no_resume', ready=False, blocking=True,
@@ -175,18 +179,11 @@ def build_state():
                     done=done, missing=missing,
                     data_dir=DATA_DIR, config_path=CFG_PATH)
 
-    if cache_h is None:
-        return dict(status='no_jobs', ready=False, blocking=False,
-                    ask='第一次用要同步岗位库，大概一分半，别关窗口。',
-                    actions=[dict(id='sync_jobs', label='同步岗位库')],
-                    done=done, missing=missing,
-                    data_dir=DATA_DIR, config_path=CFG_PATH)
-
     return dict(status='ready', ready=True, blocking=False,
                 ask='可以开始了。你想投什么岗位？',
                 actions=[], done=done, missing=[],
                 data_dir=DATA_DIR, config_path=CFG_PATH,
-                jobs_cache_hours=round(cache_h, 1),
+                jobs_cache_hours=(round(cache_h, 1) if cache_h is not None else None),
                 profile_missing_required=profile_missing_count())
 
 
@@ -247,8 +244,13 @@ def act_use_template(args):
     stem = f'{name} - 简历模板'
     docx = os.path.join(docx_dir, stem + '.docx')
     pdf = os.path.join(pdf_dir, stem + '.pdf')
-    shutil.copy2(TEMPLATE_DOCX, docx)
-    shutil.copy2(TEMPLATE_PDF, pdf)
+    shutil.copy(TEMPLATE_DOCX, docx)
+    shutil.copy(TEMPLATE_PDF, pdf)
+    # 这两份天生是一对，把修改时间对齐，免得被「Word 比 PDF 新」的检查误判
+    import time
+    now = time.time()
+    for p in (docx, pdf):
+        os.utime(p, (now, now))
     _write_base_cfg(name, docx, pdf, resume_dir)
     print(f'已用内置模板起步：{docx}')
     print('这个模板是固定骨架（3 段实习 / 2 个项目 / 1 段校园），')
@@ -300,6 +302,15 @@ def act_sync_jobs(_):
     print('\n'.join(tail[-6:]))
     if r.returncode != 0:
         sys.exit('岗位库同步失败')
+
+    # 同步下来的是选项内部 ID（optXXX），不翻译成中文，按城市/学历筛全是 0 条
+    print('把选项 ID 翻成中文…')
+    r2 = subprocess.run([sys.executable, os.path.join(HERE, 'translate_jobs.py')],
+                        capture_output=True, text=True, encoding='utf-8', errors='replace')
+    out2 = (r2.stdout or '').strip().splitlines()
+    print('\n'.join(out2[-4:]))
+    if r2.returncode != 0:
+        sys.exit('选项翻译失败：' + ((r2.stderr or r2.stdout or '')[-200:]))
 
 
 ACTIONS = {

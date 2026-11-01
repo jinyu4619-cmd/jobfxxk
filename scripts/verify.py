@@ -167,6 +167,9 @@ def check_jobs():
     issues = []
     if not rows:
         issues.append('岗位缓存是空的，同步可能失败了')
+    if not d.get('translated'):
+        issues.append('缓存还没翻译（城市/学历还是 optXXX 内部 ID），筛岗会一条都筛不出来。'
+                      '重跑一次 setup.py 的同步，或单独跑 python scripts/translate_jobs.py')
     stale = {'届次要求', '学历要求', '工作城市'} - set(rows[0].keys() if rows else [])
     if stale:
         issues.append('缓存里缺字段：' + '、'.join(sorted(stale)) + '，同步版本太旧，重跑一次')

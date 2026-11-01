@@ -58,7 +58,7 @@ Playwright、pypdf 这些依赖不用手动装，第一次跑会提示并代你�
 
 装好之后，跟它说「开始」或者「帮我投简历」。
 
-它会自己检查数据目录、配置文件、简历、依赖、版面标定、岗位库。**缺什么问什么，一次问一件**，答完继续往下走。你不用改任何文件，也不用记命令。
+它会自己检查数据目录、配置文件、简历、依赖、版面标定。**缺什么问什么，一次问一件**，答完继续往下走。你不用改任何文件，也不用记命令。
 
 会问到的大致就这几种：
 
@@ -69,7 +69,8 @@ Playwright、pypdf 这些依赖不用手动装，第一次跑会提示并代你�
 | 只有 PDF | 「只有 PDF 改不了字，先用内置模板起步？」 |
 | 缺填表组件 | 「还差一个组件，约 10MB，要装吗」 |
 | 没标定版面 | 「量一下行宽，十几秒」 |
-| 岗位库没同步 | 「同步岗位库，大概一分半，别关窗口」 |
+
+岗位库不在启动检查里——那张表是实时更新的，每次找岗前现拉，不存旧数据。
 
 全部就绪后，它会说「可以开始了。你想投什么岗位？」
 
@@ -98,12 +99,14 @@ python scripts/detect_browsers.py
 
 不选也能用：默认按 `config.browser_path` → 系统自带 Edge → Chrome → Playwright 内置内核的顺序试。想固定用某个浏览器，把它写进 `config.json` 的 `browser_name` / `browser_path` 就行。
 
-### 2. 同步岗位库（每天第一次用）
+### 2. 同步岗位库（每次找岗前都要跑）
 
 ```bash
-node scripts/sync_jobs.cjs --only=jobs      # 约 90 秒，抓 12000 条
-python scripts/translate_jobs.py            # 把选项 ID 翻成中文，约 40 秒
+node scripts/sync_jobs.cjs --only=jobs      # 约 75 秒，抓 12000 条
+python scripts/translate_jobs.py            # 约 40 秒，把 optXXX 翻成中文
 ```
+
+数据源在 `config.json` 的 `job_source` 里。**表是实时更新的，所以每次找岗前现拉一遍，不要拿旧缓存筛**；缓存只是中间产物。换库只改这几行配置，代码不用动。
 
 缓存默认写到 `config.job_cache`，筛岗和翻译读的是同一个位置。
 
@@ -194,7 +197,7 @@ jobfxxk/
 │   ├── 问题库.md              网申字段清单、隐私分级
 │   ├── 岗位推荐.md            数据源、匹配打分、意向获取
 │   └── 投递台账.md            进度跟踪表
-├── scripts/                  19 个脚本（见下表）
+├── scripts/                  21 个脚本（见下表）
 ├── assets/template/          脱敏简历模板（docx + pdf，必须成套）
 ├── config.example.json
 └── package.json
@@ -204,6 +207,8 @@ jobfxxk/
 |---|---|
 | `setup.py` | **启动入口**：检查状态、报告卡点、执行修复 |
 | `state.py` | 读写进度状态，断了能接上 |
+| `read_resume.py` | 把 docx / pdf 读成干净文本 |
+| `build_skill.py` | 打包成 .skill（发布用） |
 | `profile.py` | 个人档案：静态信息 + 经历库，只问缺的 |
 | `verify.py` | 阶段验收：档案 / 简历 / 版式 / 台账 / 岗位库 / 待排版稿 |
 | `check_config.py` | 逐项检查配置与环境（setup.py 的详细版） |

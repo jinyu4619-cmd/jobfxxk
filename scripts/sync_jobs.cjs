@@ -7,6 +7,10 @@
  *      解压与字段映射全部放在页面内完成（DecompressionStream），只把紧凑的行数据传回 Node，
  *      避免每页 200KB 的 base64 往返导致的超时。
  *
+ * 数据源在 config.json 的 job_source 里（app / base / 三张表 ID）。
+ * 换库只改配置，不改代码。表是实时更新的，所以**每次找岗前都要重新拉**，
+ * 本地缓存只是中间产物，不是资产。
+ *
  * 用法：
  *   node sync_jobs.cjs                  # 全部子表
  *   node sync_jobs.cjs --only=jobs      # 只同步岗位表（jobs|referrals|majors）
@@ -20,13 +24,15 @@ const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
 
-const APP = 'OGPubC12daD6HlsNcpwc7mR4nCd';
-const BASE = 'https://acn8c93z7tds.feishu.cn';
+const APP = (config().job_source || {}).app || 'OGPubC12daD6HlsNcpwc7mR4nCd';
+const BASE = (config().job_source || {}).base || 'https://acn8c93z7tds.feishu.cn';
 
+// 表 ID 从 config.job_source 读，换库只改配置不改代码
+const SRC = config().job_source || {};
 const TABLES = {
-  jobs: { id: 'tblFNPEDJ2kHQGc4', name: '27秋招汇总表' },
-  referrals: { id: 'tblkwb9UTNkcvFpz', name: '内推码分享' },
-  majors: { id: 'tblBBEYMOBVzKv8D', name: '如何根据专业选岗位' },
+  jobs: { id: SRC.jobs || 'tblFNPEDJ2kHQGc4', name: '岗位表' },
+  referrals: { id: SRC.referrals || 'tblkwb9UTNkcvFpz', name: '内推码' },
+  majors: { id: SRC.majors || 'tblBBEYMOBVzKv8D', name: '专业对照' },
 };
 
 // 字段映射兜底表：运行时解析失败时用它（2026-10-31 从原表实测得到）

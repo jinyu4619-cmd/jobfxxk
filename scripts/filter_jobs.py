@@ -31,8 +31,24 @@ def load():
 
 
 def to_date(s):
-    """把「2026-11-30」「2026年11月」之类转成 datetime；转不出返回 None"""
-    m = DATE_RE.search(s or '')
+    """把各种日期写法转成 datetime
+
+    支持：2026-11-30 / 2026年11月 / 1791820800000（毫秒时间戳，飞书日期字段就长这样）
+    """
+    s = str(s or '').strip()
+    if not s:
+        return None
+    if re.fullmatch(r'\d{13}', s):          # 毫秒时间戳
+        try:
+            return datetime.fromtimestamp(int(s) / 1000)
+        except (ValueError, OSError):
+            return None
+    if re.fullmatch(r'\d{10}', s):          # 秒时间戳
+        try:
+            return datetime.fromtimestamp(int(s))
+        except (ValueError, OSError):
+            return None
+    m = DATE_RE.search(s)
     if not m:
         return None
     y, mo, dd = int(m.group(1)), int(m.group(2)), int(m.group(3) or 1)
@@ -117,6 +133,8 @@ def main():
     ap.add_argument('--top', type=int, default=20)
     ap.add_argument('--list-cities', action='store_true')
     ap.add_argument('--include-expired', action='store_true')
+    ap.add_argument('--max-stale', type=int, default=0,
+                    help='更新日期超过 N 天的直接丢掉；0 = 只标注不丢')
     a = ap.parse_args()
 
     rows, synced = load()
@@ -134,7 +152,7 @@ def main():
 
     kws = [k.strip() for k in a.keyword.split(',') if k.strip()]
     now = datetime.now()
-    dropped = {'届次': 0, '学历': 0, '城市': 0, '过期': 0}
+    dropped = {'届次': 0, '学历': 0, '城市': 0, '过期': 0, '陈旧': 0}
 
     kept = []
     for r in rows:
@@ -151,6 +169,12 @@ def main():
         if dl and dl < now and not a.include_expired:
             dropped['过期'] += 1
             continue
+        # 大部分岗位没有截止日期，只能看「更新日期」判断还开不开着
+        if a.max_stale:
+            upd = to_date(r.get('更新日期', ''))
+            if upd and (now - upd).days > a.max_stale:
+                dropped['陈旧'] += 1
+                continue
         s, hits = score(r, kws) if kws else (0, [])
         kept.append((s, hits, r, dl))
 

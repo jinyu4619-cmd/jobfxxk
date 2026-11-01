@@ -16,7 +16,16 @@
   "_tracker": "台账文件本身，不是目录。文件不存在没关系，第一次记账时自动建；表格外你自己写的内容不会被覆盖。",
 
   "job_cache": "D:/你的目录/jobfxxk-data/data/jobs.json",
-  "_job_cache": "可以留空。留空时默认放数据目录下，第一次同步岗位库时生成。",
+  "_job_cache": "可以留空。临时文件，每次找岗都会重新拉一遍，不要当资产看。",
+
+  "job_source": {
+    "_说明": "岗位数据源。表是实时更新的，每次找岗前现拉；换库只改这里，不用改代码。",
+    "base": "https://acn8c93z7tds.feishu.cn",
+    "app": "OGPubC12daD6HlsNcpwc7mR4nCd",
+    "jobs": "tblFNPEDJ2kHQGc4",
+    "referrals": "tblkwb9UTNkcvFpz",
+    "majors": "tblBBEYMOBVzKv8D"
+  },
 
   "browser_name": "",
   "browser_path": "",

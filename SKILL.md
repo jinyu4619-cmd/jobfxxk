@@ -69,7 +69,6 @@ python scripts/setup.py --check
 | `no_resume` | 没有可用的简历 | 「给我 Word 和 PDF 各一份」 | `set_resume` 或 `use_template` |
 | `no_deps` | 缺填表组件 | 「还差一个组件，要装吗」 | `install_deps` |
 | `no_anchors` | 没标定版面 | 「量一下行宽，十几秒」 | `make_anchors` |
-| `no_jobs` | 岗位库没同步 | 「同步岗位库，一分半」 | `sync_jobs` |
 | `ready` | 全部就绪 | 「可以开始了」 | — |
 
 ### 简历的两个版本（硬性要求）
@@ -108,6 +107,20 @@ python scripts/state.py set --phase "阶段 8 · 填表中" --company 某公司 
 **用户看到**：
 
 > 把简历拖进来，或者点一下选文件。PDF、Word、图片都行。没有简历的话直接讲，我边听边整理。
+
+**拿到文件先跑这一条，不要自己硬读**：
+
+```bash
+python scripts/read_resume.py "<文件路径>" --json
+```
+
+它挡住三个会毁掉结果的坑：
+
+- **文本框里的文字**——很多简历正文在文本框里，按普通段落读会漏掉一半
+- **AlternateContent 存了两份副本**——不去重会把同一段经历当成两段
+- **PDF 字之间夹空格**——`1 2 0 0 +` 这种直接毁掉数字，而数字是最不能错的部分
+
+输出里的 `numbers` 就是待逐条核对的数字清单，`textbox_paragraphs` 告诉你有多少段在文本框里。
 
 **四种输入都接**：
 
@@ -346,7 +359,16 @@ python scripts/compose.py --draft 填充稿.json
 | 岗位截图 | 读图提取公司名和岗位名，再定位官网 |
 | 什么都不给还不让联网 | 直接说无法推荐，不编造 |
 
-**内置岗位库**：飞书表「27届秋招网申表」，约 12000 条校招岗位、520 条内推码，公开可读，不需要用户登录。用 `scripts/sync_jobs.cjs` 同步，每天首次调用时跑一次，结果存本地。
+**内置岗位库**：飞书表，约 12000 条校招岗位、500 多条内推码，公开可读，不需要用户登录。**表是实时更新的，所以每次找岗前都要现拉一遍，不要拿旧缓存筛**——缓存只是中间产物，不是资产。
+
+```bash
+node scripts/sync_jobs.cjs --only=jobs     # 约 90 秒
+python scripts/translate_jobs.py           # 约 40 秒，把 optXXX 翻成中文
+```
+
+两条都必须跑。只同步不翻译，城市和学历还是 `optXXX` 内部 ID，按城市筛会一条都筛不出来。
+
+数据源配置在 `config.json` 的 `job_source` 里（base / app / 三张表 ID）。**换库只改配置，不改代码**——用户给了新表，把 ID 换掉重跑即可。
 
 **筛选三层**：
 1. 字段过滤（届次/学历/城市/截止日期/岗位线），本地跑，不联网
@@ -687,6 +709,8 @@ python scripts/verify.py tracker
 | `scripts/check_config.py` | 首次使用时检查 config.json 是否配好 |
 | `scripts/setup.py` | **启动入口**：检查状态、报告卡点、执行修复 |
 | `scripts/state.py` | 读写进度状态，断了能接上 |
+| `scripts/read_resume.py` | 把 docx/pdf 读成干净文本（处理文本框、副本、PDF 字间空格） |
+| `scripts/compose.py` | 把经历灌进模板，产出待排版 docx（不导出 PDF） |
 | `scripts/profile.py` | 个人档案：静态信息、经历库、逐条确认 |
 | `scripts/verify.py` | 阶段验收：档案 / 简历 / 版式 / 台账 / 岗位库 |
 | `scripts/detect_browsers.py` | 扫描本机已装浏览器，供用户选择 |
