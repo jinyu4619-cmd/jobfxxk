@@ -34,6 +34,7 @@ python scripts/setup.py --check
 4. **没确认过的经历不许进简历**（`scripts/profile.py exp confirm` 是硬闸，有数字必须带 `--metrics`）。
 5. **敏感信息**（证件号、紧急联系人）只进 DPAPI 加密文件，不进 `profile.json`、不进日志、不进 Git。
 6. **不要在用户屏幕上弹窗**，不要用后台分离进程跑长任务。
+7. **经历一段一段确认**：一次只放一段完整内容（组织、角色、时间、每条 bullet，数字印在句子里），给「确认无误 / 要修改 / 删掉这条」三个选项。不要单独再问一轮「这个数字对不对」。
 
 ---
 
@@ -44,7 +45,7 @@ python scripts/setup.py --check
 | 阶段 | 干什么 | 脚本 |
 |---|---|---|
 | 0 | 启动检查、断点恢复 | `setup.py --check` |
-| 1 | 把简历读成文本、逐段核对数字 | `read_resume.py`、`profile.py exp *` |
+| 1 | 把简历读成文本、逐段展示确认 | `read_resume.py`、`profile.py exp *` |
 | 2 | 建个人信息库（只问缺的） | `profile.py missing / set / mode / review` |
 | 3 | 定模板、标定行宽 | `make_anchors.py`、`compose.py` |
 | 4 | 现拉岗位库、筛岗、读 JD | `sync_jobs.cjs`、`translate_jobs.py`、`filter_jobs.py`、`fetch_jd.cjs` |
