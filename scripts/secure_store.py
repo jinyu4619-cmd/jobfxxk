@@ -6,8 +6,10 @@
 
 用法:
   echo {json} | python scripts/secure_store.py save    # 加密保存（从 stdin 读 JSON）
-  python scripts/secure_store.py load                  # 解密输出（仅本机本人可用）
-  python scripts/secure_store.py keys                  # 只列字段名，不显示值
+  python scripts/secure_store.py keys                  # 只列字段名
+  python scripts/secure_store.py load                  # 字段名 + 掩码值（默认，安全）
+  python scripts/secure_store.py load --field 身份证号  # 取单个字段明文（会写进对话记录）
+  python scripts/secure_store.py load --all            # 全部明文（慎用）
   python scripts/secure_store.py delete                # 删除
   python scripts/secure_store.py status                # 是否存在
 """
@@ -87,8 +89,17 @@ def load() -> dict:
         return json.loads(unprotect(f.read()).decode('utf-8'))
 
 
+def mask(v):
+    """留头留尾，中间打码。身份证这类看一眼能认出来，又不会整串进日志。"""
+    s = str(v)
+    if len(s) <= 4:
+        return '*' * len(s)
+    return s[:2] + '*' * max(1, len(s) - 4) + s[-2:]
+
+
 def main():
     cmd = sys.argv[1] if len(sys.argv) > 1 else 'status'
+    args = sys.argv[2:]
 
     if cmd == 'save':
         text = sys.stdin.read()
@@ -99,8 +110,18 @@ def main():
         data = load()
         if not data:
             print('{}')
-        else:
+        elif '--all' in args:
             print(json.dumps(data, ensure_ascii=False, indent=1))
+        elif '--field' in args:
+            k = args[args.index('--field') + 1]
+            if k not in data:
+                sys.exit(f'没有这个字段：{k}\n已存的字段：' + '、'.join(data.keys()))
+            print(data[k])
+        else:
+            # 默认只给掩码：明文进对话记录、终端日志、模型上下文都是泄露面
+            for k, v in data.items():
+                print(f'{k}：{mask(v)}')
+            print('\n要取某个字段的明文：load --field 字段名')
 
     elif cmd == 'keys':
         data = load()

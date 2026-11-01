@@ -14,6 +14,8 @@
  *   node sync_jobs.cjs --out=./data
  */
 const { chromium } = require('playwright');
+const { launch } = require('./browser_config.cjs');
+const { config, dataDir } = require('./config.cjs');
 const fs = require('fs');
 const path = require('path');
 const zlib = require('zlib');
@@ -45,11 +47,13 @@ const FIELD_FALLBACK = {
   tblBBEYMOBVzKv8D: { fldNgoy01C: '专业', fldQWXOuC7: '说明' },
 };
 
-// 只保留筛岗真正用得到的字段，其余丢弃（缓存体积可降 80%）
+// 只保留筛岗真正用得到的字段（缓存体积可降 80%）。更新日期/开始日期留着——
+// 岗位推荐规则要靠它们判断「过期」和「招满即止高风险」。
 const SLIM = {
   tblFNPEDJ2kHQGc4: ['企业名称', '岗位列表', '所属行业', '工作城市', '学历要求',
-                     '届次要求', '招聘类型', '截止日期', '投递地址', '独家情报（仅供参考）'],
-  tblkwb9UTNkcvFpz: ['公司名', '内推码', '内推地址', '备注信息'],
+                     '届次要求', '招聘类型', '截止日期', '投递地址', '独家情报（仅供参考）',
+                     '更新日期', '开始日期'],
+  tblkwb9UTNkcvFpz: ['公司名', '内推码', '内推地址', '备注信息', '更新日期'],
   tblBBEYMOBVzKv8D: ['专业', '说明'],
 };
 
@@ -62,7 +66,10 @@ const args = process.argv.slice(2);
 const quiet = args.includes('--quiet');
 const onlyArg = args.find(a => a.startsWith('--only='));
 const only = onlyArg ? onlyArg.split('=')[1].split(',') : null;
-const outDir = (args.find(a => a.startsWith('--out=')) || '--out=./data').split('=')[1];
+// 默认输出到个人数据目录（和 filter/translate 读的是同一个地方），
+// 不再用 ./data —— 那个是相对当前工作目录的，换个目录跑就对不上了。
+const outArg = args.find(a => a.startsWith('--out='));
+const outDir = outArg ? outArg.split('=')[1] : dataDir();
 
 const log = (...a) => { if (!quiet) console.log(...a); };
 const sleep = ms => new Promise(r => setTimeout(r, ms));
@@ -106,7 +113,7 @@ const PULL = async ({ base, app, tableId, fieldNames, startOffset, pages, pageSi
         total = body.tableRecordNum ?? total;
         const map = body.recordMap || {};
         const ids = Object.keys(map);
-        if (!ids.length) { ok = true; failed++; break; }
+        if (!ids.length) { ok = true; break; }   // 翻到末尾了，不是失败
         for (const rid of ids) {
           const row = { _id: rid };
           for (const [fid, v] of Object.entries(map[rid])) row[fieldNames[fid] || fid] = val(v);
@@ -124,7 +131,7 @@ const PULL = async ({ base, app, tableId, fieldNames, startOffset, pages, pageSi
 
 (async () => {
   const started = Date.now();
-  const browser = await chromium.launch({ channel: 'msedge', headless: true });
+  const browser = await launch(chromium, { headless: true });
   const page = await (await browser.newContext()).newPage();
 
   log('启动浏览器，建立访客会话…');
@@ -254,7 +261,12 @@ const PULL = async ({ base, app, tableId, fieldNames, startOffset, pages, pageSi
       failedPages,
       rows: finalRows,
     };
-    const file = path.join(outDir, key + '.json');
+    // 岗位表写到 config.job_cache（筛岗和翻译都读这个路径），其余子表写到数据目录
+    const cacheCfg = String(config().job_cache || '').trim();
+    const file = (key === 'jobs' && cacheCfg)
+      ? cacheCfg.replace(/[\\/]+/g, path.sep)
+      : path.join(outDir, key + '.json');
+    fs.mkdirSync(path.dirname(file), { recursive: true });
     fs.writeFileSync(file, JSON.stringify(out), 'utf8');
     summary.push({ name: t.name, rows: rows.length, total, failedPages, file });
   }
@@ -264,5 +276,13 @@ const PULL = async ({ base, app, tableId, fieldNames, startOffset, pages, pageSi
   console.log('\n=== 同步结果 ===');
   summary.forEach(s => console.log(`  ${s.name}: ${s.rows}/${s.total ?? '?'} 条${s.failedPages ? `（${s.failedPages} 页失败）` : ''}`));
   console.log(`  耗时 ${((Date.now() - started) / 1000).toFixed(1)}s`);
+
+  // 一条都没同步到就是失败，不能让下游以为「今天没岗位」
+  const empty = summary.filter(s => s.rows === 0);
+  if (empty.length) {
+    console.error('\n没有同步到任何数据：' + empty.map(s => s.name).join('、'));
+    console.error('可能是数据源改了结构、网络不通，或者这个链接已经不再公开。');
+    process.exit(3);
+  }
   process.exit(0);
 })().catch(e => { console.error('ERR ' + String(e).slice(0, 300)); process.exit(1); });

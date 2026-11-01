@@ -5,27 +5,33 @@
 它会：
   1. 起无头浏览器打开岗位表，拦下 tablesv3 响应
   2. 取出每个字段的中文名和「选项ID → 选项名」映射
-  3. 就地改写 data/jobs.json，把 optXXX 换成中文
+  3. 就地改写岗位缓存，把 optXXX 换成中文
   4. 把映射存到 data/options.json，以后字段变了自己能查
 """
-import json, os, subprocess, sys, tempfile
+import json, os, subprocess, sys
 sys.stdout.reconfigure(encoding='utf-8')
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from paths import CFG, REPO, DATA_DIR, path_of
-CACHE = CFG.get('job_cache', os.path.join(DATA_DIR, 'jobs.json')).replace('/', os.sep)
+sys.path.insert(0, HERE)
+from paths import CFG, DATA_DIR
+
+CACHE = (CFG.get('job_cache') or os.path.join(DATA_DIR, 'jobs.json')).replace('/', os.sep)
 OPTFILE = os.path.join(DATA_DIR, 'options.json')
+
+# 探针必须落在 scripts/ 下面：Node 的模块解析是从「脚本所在目录」往上找 node_modules，
+# 放 %TEMP% 里永远找不到装在仓库里的 playwright。
+PROBE_PATH = os.path.join(HERE, '_probe_meta.cjs')
 
 PROBE = r'''
 const { chromium } = require('playwright');
+const { launch } = require('./browser_config.cjs');
 const zlib = require('zlib');
 const APP = 'OGPubC12daD6HlsNcpwc7mR4nCd';
 const BASE = 'https://acn8c93z7tds.feishu.cn';
 const TABLE = 'tblFNPEDJ2kHQGc4';
 (async () => {
-  const b = await chromium.launch({ channel: 'msedge', headless: true });
+  const b = await launch(chromium, { headless: true });
   const page = await (await b.newContext()).newPage();
   const metas = {};
   page.on('response', async (res) => {
@@ -62,27 +68,39 @@ const TABLE = 'tblFNPEDJ2kHQGc4';
 '''
 
 
+def node_bin():
+    from shutil import which
+    return which('node') or r'D:\nodejs\node.exe'
+
+
 def main():
     if not os.path.exists(CACHE):
-        sys.exit('岗位缓存不存在，先跑 sync_jobs.cjs --only=jobs')
+        sys.exit('岗位缓存不存在，先跑 node scripts/sync_jobs.cjs --only=jobs')
 
-    tmp = os.path.join(tempfile.gettempdir(), 'probe_meta.cjs')
-    open(tmp, 'w', encoding='utf-8').write(PROBE)
-
-    node = shutil_which('node') or r'D:\nodejs\node.exe'
+    open(PROBE_PATH, 'w', encoding='utf-8').write(PROBE)
     env = dict(os.environ)
-    env.setdefault('NODE_PATH', CFG.get('node_path', ''))
-    r = subprocess.run([node, tmp], capture_output=True, text=True,
-                       encoding='utf-8', errors='replace', env=env, timeout=240)
+    env['NODE_PATH'] = os.path.join(ROOT, 'node_modules')   # 不覆盖成空字符串
+    try:
+        r = subprocess.run([node_bin(), PROBE_PATH], capture_output=True, text=True,
+                           encoding='utf-8', errors='replace', env=env,
+                           cwd=ROOT, timeout=300)
+    finally:
+        try:
+            os.remove(PROBE_PATH)
+        except OSError:
+            pass
+
     out = (r.stdout or '').strip().splitlines()
     if not out or out[-1] == 'NO_CAPTURE':
-        sys.exit('没抓到表结构：' + (r.stderr or '')[:200])
+        sys.exit('没抓到表结构：' + ((r.stderr or '').strip()[:300] or '页面可能改版了，或者网络不通'))
 
     meta = json.loads(out[-1])
     opts = meta['options']
+    if not opts:
+        sys.exit('抓到了表结构，但里面没有任何带选项的字段。表可能改版了。')
     print(f'拿到 {len(opts)} 个字段的选项映射：' + '、'.join(opts.keys()))
 
-    d = json.load(open(CACHE, encoding='utf-8'))
+    d = json.load(open(CACHE, encoding='utf-8-sig'))
     rows = d.get('rows', [])
     changed = 0
     for row in rows:
@@ -101,13 +119,10 @@ def main():
     json.dump(opts, open(OPTFILE, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
 
     print(f'已翻译 {changed} 个单元格')
-    print('示例：', {k: rows[0].get(k) for k in list(opts.keys())[:3]})
+    if rows:
+        print('示例：', {k: rows[0].get(k) for k in list(opts.keys())[:3]})
     print('映射表已存：', OPTFILE)
 
 
-def shutil_which(name):
-    from shutil import which
-    return which(name)
-
-
-main()
+if __name__ == '__main__':
+    main()

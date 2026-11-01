@@ -1,13 +1,27 @@
 {
-  "_说明": "复制成 config.json 后填写自己的路径。config.json 不要提交到仓库。",
+  "_说明": "把本文件复制成 jobfxxk-data/config.json，填上你自己的路径。config.json 不要提交到仓库。",
+  "_路径写法": "用正斜杠 /，例如 D:/文档/简历库/母版.docx。反斜杠也可以，但正斜杠不会被转义吃掉。",
+  "_数据目录": "配置放在哪，数据就放哪。推荐放在与仓库平级的 jobfxxk-data/，或用户主目录下的 jobfxxk-data/。",
+
   "name": "你的名字",
+
   "master_docx": "D:/你的目录/简历库/docx/母版.docx",
   "master_pdf": "D:/你的目录/简历库/pdf/母版.pdf",
-  "anchors": "D:/你的目录/jobfxxk/user/锚点表.json",
   "resume_dir": "D:/你的目录/简历库",
-  "job_cache": "D:/你的目录/jobfxxk/data/jobs.json",
-  "tracker": "D:/你的目录/投递跟踪/投递跟踪总表.md",
+
+  "anchors": "D:/你的目录/jobfxxk-data/user/锚点表.json",
+  "_anchors": "可以留空。留空时默认放数据目录的 user/ 下，第一次跑 make_anchors.py 时生成。",
+
+  "tracker": "D:/你的目录/投递跟踪/投递台账.md",
+  "_tracker": "台账文件本身，不是目录。文件不存在没关系，第一次记账时自动建；表格外你自己写的内容不会被覆盖。",
+
+  "job_cache": "D:/你的目录/jobfxxk-data/data/jobs.json",
+  "_job_cache": "可以留空。留空时默认放数据目录下，第一次同步岗位库时生成。",
+
   "browser_name": "",
   "browser_path": "",
-  "_browser 说明": "首次投递时脚本会扫描本机浏览器让你选，选完写回这两项，之后默认用它"
+  "_browser": "运行 detect_browsers.py 会把本机浏览器列出来，选一个填这两项。留空也能跑：默认用系统自带的 Edge，再退 Chrome，最后用 Playwright 内置内核。",
+
+  "work_dir": "",
+  "_work_dir": "微调产出的 docx/pdf 放哪。留空默认放 resume_dir/微调版/。"
 }

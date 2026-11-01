@@ -9,32 +9,30 @@
 筛选分三步：
   1. 硬门槛：届次 / 学历 / 城市 / 截止日期
   2. 关键词命中：岗位名与你的方向词比对，算一个粗分
-  3. 按分数排序，输出前 N 条精简结果（不含原始长字段）
+  3. 按分数排序（同分看截止日期），输出前 N 条精简结果
 """
 import argparse, json, os, re, sys
 from datetime import datetime
 sys.stdout.reconfigure(encoding='utf-8')
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-ROOT = os.path.dirname(HERE)
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from paths import CFG, REPO, DATA_DIR, path_of
-CACHE = CFG.get('job_cache', os.path.join(DATA_DIR, 'jobs.json')).replace('/', os.sep)
+sys.path.insert(0, HERE)
+from paths import CFG, DATA_DIR
+
+CACHE = (CFG.get('job_cache') or os.path.join(DATA_DIR, 'jobs.json')).replace('/', os.sep)
+DATE_RE = re.compile(r'(20\d{2})[-./年](\d{1,2})[-./月]?(\d{1,2})?')
 
 
 def load():
     if not os.path.exists(CACHE):
         sys.exit(f'岗位缓存不存在：{CACHE}\n先跑：node scripts/sync_jobs.cjs --only=jobs')
-    d = json.load(open(CACHE, encoding='utf-8'))
+    d = json.load(open(CACHE, encoding='utf-8-sig'))
     return d.get('rows', []), d.get('syncedAt', '')
 
 
-def parse_deadline(s):
-    """把「招满即止」「2026-11-30」之类转成可比较的值；返回 None 表示无截止限制"""
-    s = (s or '').strip()
-    if not s or '招满' in s or '长期' in s:
-        return None
-    m = re.search(r'(20\d{2})[-./年](\d{1,2})[-./月]?(\d{1,2})?', s)
+def to_date(s):
+    """把「2026-11-30」「2026年11月」之类转成 datetime；转不出返回 None"""
+    m = DATE_RE.search(s or '')
     if not m:
         return None
     y, mo, dd = int(m.group(1)), int(m.group(2)), int(m.group(3) or 1)
@@ -42,6 +40,14 @@ def parse_deadline(s):
         return datetime(y, mo, dd)
     except ValueError:
         return None
+
+
+def parse_deadline(s):
+    """截止日期；「招满即止」「长期」返回 None 表示无明确死线"""
+    s = (s or '').strip()
+    if not s or '招满' in s or '长期' in s:
+        return None
+    return to_date(s)
 
 
 def degree_ok(req, mine):
@@ -62,10 +68,32 @@ def degree_ok(req, mine):
 
 
 def year_ok(req, year):
-    req = req or ''
+    """届次匹配：把要求里的年份全部取出来再判断。
+
+    只看字面量「2027」会误杀「26届/27届」，那是覆盖 2027 届的。
+    """
+    req = (req or '').strip()
     if not req:
         return True
-    return str(year) in req or '不限' in req or '应届' in req
+    if '不限' in req or '应届' in req:
+        return True
+    years = {int(y) for y in re.findall(r'(20\d{2})', req)}
+    if not years:
+        years = {2000 + int(y) for y in re.findall(r'(?<!\d)(\d{2})(?=\s*届)', req)}
+    return not years or int(year) in years
+
+
+def stale_note(row, now):
+    """数据新鲜度提示。字段缺失就跳过，不硬判。"""
+    notes = []
+    upd = to_date(row.get('更新日期', ''))
+    if upd and (now - upd).days > 30:
+        notes.append(f'数据{(now - upd).days}天没更新')
+    if '招满' in (row.get('截止日期', '') or ''):
+        start = to_date(row.get('开始日期', ''))
+        if start and (now - start).days > 60:
+            notes.append(f'招满即止，已开始{(now - start).days}天，可能早关了')
+    return ' / '.join(notes)
 
 
 def score(row, kws):
@@ -73,6 +101,11 @@ def score(row, kws):
             row.get('所属行业', '') + ' ' + row.get('独家情报（仅供参考）', ''))
     hits = [k for k in kws if k and k in text]
     return len(hits), hits
+
+
+def deadline_key(dl):
+    """同分时按截止日期升序，没死线的排最后"""
+    return dl or datetime.max
 
 
 def main():
@@ -119,9 +152,9 @@ def main():
             dropped['过期'] += 1
             continue
         s, hits = score(r, kws) if kws else (0, [])
-        kept.append((s, hits, r))
+        kept.append((s, hits, r, dl))
 
-    kept.sort(key=lambda x: -x[0])
+    kept.sort(key=lambda x: (-x[0], deadline_key(x[3])))
     top = kept[:a.top]
 
     print(f'缓存时间：{synced}')
@@ -130,10 +163,16 @@ def main():
           f' → 剩 {len(kept)} 条')
     if kws:
         print(f'关键词：{"、".join(kws)}')
+
+    # 零命中必须明说，否则模型会把「随便几条」当成匹配结果往下走
+    best = kept[0][0] if kept else 0
+    if kws and best == 0:
+        print('\n⚠ 没有一条命中方向词。下面这些只是过了硬门槛，')
+        print('  不代表适合你。换个说法再筛，或者去掉关键词先看看这个城市有什么。')
     print()
 
     out = []
-    for i, (s, hits, r) in enumerate(top, 1):
+    for i, (s, hits, r, dl) in enumerate(top, 1):
         item = {
             '序号': i,
             '公司': r.get('企业名称', ''),
@@ -143,17 +182,23 @@ def main():
             '投递地址': r.get('投递地址', ''),
             '命中': hits,
             '情报': (r.get('独家情报（仅供参考）', '') or '')[:40],
+            '提示': stale_note(r, now),
         }
         out.append(item)
         print(f'{i:>2}. {item["公司"]}｜{item["岗位"]}')
         print(f'     {item["城市"]}｜截止 {item["截止"]}' +
               (f'｜命中 {"/".join(hits)}' if hits else ''))
+        if item['提示']:
+            print(f'     ⚠ {item["提示"]}')
         print(f'     {item["投递地址"][:80]}')
 
     dst = os.path.join(DATA_DIR, 'shortlist.json')
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     json.dump(out, open(dst, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
     print(f'\n精简清单已存：{dst}')
+    if kws and best == 0:
+        print('注意：清单里的条目一条都没命中关键词，别当成匹配结果用。')
 
 
-main()
+if __name__ == '__main__':
+    main()

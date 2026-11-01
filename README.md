@@ -27,100 +27,76 @@
 
 ## 安装
 
-### 方式一：装成 Claude skill（推荐）
+### 方式一：保存成 skill（Claude 桌面版）
 
-把整个 `jobfxxk` 文件夹放到 skills 目录里：
+下载 Release 里的 `jobfxxk.skill`，双击或在应用里打开，点「保存技能」。
 
-```
-C:\Users\你的用户名\.claude\skills\jobfxxk\
-```
-
-放好之后重启 Claude，说「帮我投简历」就会加载这个 skill。
-
-### 方式二：从 GitHub 克隆
+### 方式二：从 GitHub 克隆（Claude Code）
 
 ```bash
-cd "C:\Users\你的用户名\.claude\skills"
+cd ~/.claude/skills
 git clone https://github.com/jinyu4619-cmd/jobfxxk.git
 ```
 
 ### 方式三：只用脚本
 
-不装 skill 也能用。把仓库下载到任意位置，所有脚本都可以直接跑，SKILL.md 当手册看。
+把仓库解压到任意目录，直接跑 `python scripts/setup.py --check`，不需要装成 skill。
 
-### 装完先装依赖
+### 需要什么
 
-```bash
-cd jobfxxk
-npm install          # 装 Playwright（驱动浏览器用）
-pip install pypdf    # 装 PDF 解析
-```
+- Windows 10 / 11（Mac 和 Linux 还没适配）
+- Microsoft Word，导出 PDF 用；WPS 多数版本也行
+- Node.js 20 以上
+- Python 3.9 以上
+- 一份简历的 **Word 版和 PDF 版**
 
-需要 Python 3.9+、Node 18+、Microsoft Word（导出 PDF 用）。
+Playwright、pypdf 这些依赖不用手动装，第一次跑会提示并代你装好。
 
 ---
 
-## 第一次配置：三步
+## 第一次使用：说一句「开始」
 
-### 第一步：建数据目录
+装好之后，跟它说「开始」或者「帮我投简历」。
 
-你的个人数据**不放在仓库里**，放在与仓库平级的 `jobfxxk-data` 目录：
+它会自己检查数据目录、配置文件、简历、依赖、版面标定、岗位库。**缺什么问什么，一次问一件**，答完继续往下走。你不用改任何文件，也不用记命令。
 
-```
-D:\27秋招\
-├── jobfxxk\          ← 仓库，可以随时发到 GitHub，不含任何个人信息
-├── jobfxxk-data\     ← 你的数据：配置、锚点表、加密信息、岗位缓存
-└── 简历库\
-    ├── docx\
-    └── pdf\
-```
+会问到的大致就这几种：
 
-### 第二步：复制配置文件
+| 它发现 | 它会说 |
+|---|---|
+| 没装 Node | 「先装 Node，装完跟我说一声」 |
+| 没有简历 | 「把 Word 版和 PDF 版各给我一份」 |
+| 只有 PDF | 「只有 PDF 改不了字，先用内置模板起步？」 |
+| 缺填表组件 | 「还差一个组件，约 10MB，要装吗」 |
+| 没标定版面 | 「量一下行宽，十几秒」 |
+| 岗位库没同步 | 「同步岗位库，大概一分半，别关窗口」 |
 
-```bash
-mkdir "D:\27秋招\jobfxxk-data"
-copy "D:\27秋招\jobfxxk\config.example.json" "D:\27秋招\jobfxxk-data\config.json"
-```
+全部就绪后，它会说「可以开始了。你想投什么岗位？」
 
-### 第三步：改路径
+### 为什么非要两个版本
 
-用记事本打开 `jobfxxk-data\config.json`，把里面的路径换成你自己的：
+- **docx** 用来改字：所有按 JD 的微调都在这份上原地替换，不进版式层，所以改完和原来一模一样
+- **pdf** 用来量版式：每个位置能放多少字，是从 PDF 的实际排版反推出来的
 
-```json
-{
-  "name": "你的名字",
-  "master_docx": "D:/27秋招/简历库/docx/母版.docx",
-  "master_pdf":  "D:/27秋招/简历库/pdf/母版.pdf",
-  "anchors":     "D:/27秋招/jobfxxk-data/user/锚点表.json",
-  "resume_dir":  "D:/27秋招/简历库",
-  "job_cache":   "D:/27秋招/jobfxxk-data/data/jobs.json",
-  "tracker":     "D:/27秋招/投递跟踪/投递跟踪总表.md"
-}
-```
+只有 PDF 不是不能投，是没法自动微调。这种情况用 `assets/template/` 里的内置模板起步，或者你自己用 Word 排一份。
 
-路径用**正斜杠 `/`**，不要用反斜杠 `\`。
+### 数据放哪
 
-### 配完自检
-
-```bash
-python scripts/check_config.py
-```
-
-它会检查七个路径 + 四样环境（Node、Playwright、pypdf、Word），哪项不对直接说人话。全绿再往下。
+个人数据不在仓库里。配置、锚点表、岗位缓存默认放用户主目录下的 `jobfxxk-data/`；如果你是 `git clone` 的，就放在与仓库平级的 `jobfxxk-data/`。**代码升级不会覆盖你的数据。**
 
 ---
 
 ## 完整跑一遍
 
-下面是一次投递的全部命令，按顺序执行。
+下面是整条链路涉及的全部命令。**正常情况下你不需要逐条敲**——说一句「开始」，agent 会通过这些脚本自己推进。这一节是给想手动控制的用户看的。
 
-### 1. 选浏览器（只做一次）
+### 1. 选浏览器（可以跳过）
 
 ```bash
 python scripts/detect_browsers.py
 ```
 
-会列出你电脑上装了什么浏览器。挑一个能自动化的（Chromium 系），把名字和路径填进 `config.json` 的 `browser_name` / `browser_path`。以后默认用它。
+不选也能用：默认按 `config.browser_path` → 系统自带 Edge → Chrome → Playwright 内置内核的顺序试。想固定用某个浏览器，把它写进 `config.json` 的 `browser_name` / `browser_path` 就行。
 
 ### 2. 同步岗位库（每天第一次用）
 
@@ -128,6 +104,8 @@ python scripts/detect_browsers.py
 node scripts/sync_jobs.cjs --only=jobs      # 约 90 秒，抓 12000 条
 python scripts/translate_jobs.py            # 把选项 ID 翻成中文，约 40 秒
 ```
+
+缓存默认写到 `config.job_cache`，筛岗和翻译读的是同一个位置。
 
 ### 3. 筛岗
 
@@ -195,7 +173,12 @@ python scripts/write_tracker.py --company "某公司" --position "用户运营�
   --city 杭州 --resume 微调版 --link "https://..."
 ```
 
-追加一行并重算统计。
+追加一行并重算统计。状态变了不要手改表格：
+
+```bash
+python scripts/write_tracker.py --update 3 --status 面试中 --next "10/28 二面"
+python scripts/write_tracker.py --list
+```
 
 ---
 
@@ -211,15 +194,17 @@ jobfxxk/
 │   ├── 问题库.md              网申字段清单、隐私分级
 │   ├── 岗位推荐.md            数据源、匹配打分、意向获取
 │   └── 投递台账.md            进度跟踪表
-├── scripts/                  12 个脚本（见下表）
-├── assets/template/          脱敏简历模板（docx + pdf）
+├── scripts/                  16 个脚本（见下表）
+├── assets/template/          脱敏简历模板（docx + pdf，必须成套）
 ├── config.example.json
 └── package.json
 ```
 
 | 脚本 | 作用 |
 |---|---|
-| `check_config.py` | 检查配置与环境 |
+| `setup.py` | **启动入口**：检查状态、报告卡点、执行修复 |
+| `state.py` | 读写进度状态，断了能接上 |
+| `check_config.py` | 逐项检查配置与环境（setup.py 的详细版） |
 | `detect_browsers.py` | 扫描本机浏览器 |
 | `secure_store.py` | 敏感信息 DPAPI 加密存取 |
 | `make_anchors.py` | 标定模板，算字数窗口 |
@@ -227,10 +212,12 @@ jobfxxk/
 | `translate_jobs.py` | 选项 ID 翻译成中文 |
 | `filter_jobs.py` | 按条件筛岗 |
 | `fetch_jd.cjs` | 后台读 JD |
-| `browser.cjs` | 浏览器：launch/dump/fill/upload/text/shot/close |
+| `browser.cjs` | 浏览器：launch / pages / dump / fill / upload / text / shot / close |
 | `fill_engine.py` | 窗口校验 + Word 替换 + 版面复验 |
-| `write_tracker.py` | 写投递台账 |
+| `write_tracker.py` | 写投递台账、改状态 |
 | `paths.py` | 统一的路径解析 |
+| `config.cjs` | Node 侧的配置读取（与 paths.py 同一套规则） |
+| `browser_config.cjs` | 统一的浏览器选择与启动 |
 
 ---
 
@@ -246,9 +233,12 @@ jobfxxk/
 
 ## 已知限制
 
+- **只支持 Windows + Word**。导出 PDF 走的是 Word 的 COM 接口，Mac、Linux、没装 Office 的机器跑到这一步会停。后面会加 LibreOffice 兜底
+- **必须 docx 和 pdf 成对**。只有 PDF 的用户没法自动微调，只能用内置模板起步，或者自己用 Word 排一份
+- **岗位库是国内校招表**，覆盖 2027 届应届生岗位。社招、海外用户拿到这份表筛不出东西
 - **验证码、滑块**必须你自己点，自动化过不去
 - **JD 读取**按系统适配：北森系最稳（走它自己的接口），其他系统退回读页面正文，读不到会明说
-- **内置模板是固定骨架**（3 段实习 / 2 个项目 / 1 段校园）。装不下你的经历时，用 Word 打开 `assets/template/简历模板.docx` 自己改条目，或者提供你自己排好版的简历（docx + pdf 成对）
+- **内置模板是固定骨架**（3 段实习 / 2 个项目 / 1 段校园）。装不下你的经历时，用 Word 打开 `assets/template/简历模板.docx` 自己改条目
 - **岗位库是别人维护的公开表格**，时效性由维护者决定，投递前请自己确认岗位还开着
 
 ---

@@ -1,8 +1,14 @@
 # -*- coding: utf-8 -*-
-"""检查 config.json 是否配好，逐项给出人话提示
+"""检查配置和环境：逐项给出人话提示
+
 用法: python scripts/check_config.py
+
+注意「必须存在」和「以后会生成」的区别：
+  - 母版 docx / 母版 pdf / 简历库目录：没配好就没法开始
+  - 锚点表：阶段 3 跑 make_anchors 才生成，现在没有是正常的
+  - 台账：第一次投递才生成，只校验目录可写
 """
-import json, os, sys
+import json, os, shutil, subprocess, sys
 sys.stdout.reconfigure(encoding='utf-8')
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -10,150 +16,173 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 from paths import CONFIG_PATH, DATA_DIR, REPO
 
-CFG = CONFIG_PATH or os.path.join(DATA_DIR, 'config.json')
+CFG_PATH = CONFIG_PATH or os.path.join(DATA_DIR, 'config.json')
 EXAMPLE = os.path.join(REPO, 'config.example.json')
 
-REQUIRED = [
-    ('name', '你的名字', None),
-    ('master_docx', '母版简历的 Word 文件', '.docx'),
-    ('master_pdf', '母版简历的 PDF 文件', '.pdf'),
-    ('anchors', '锚点表', '.json'),
-    ('resume_dir', '简历库文件夹', None),
-    ('tracker', '投递台账', '.md'),
-]
-
-ok = True
+cfg_ok = True
+env_ok = True
 
 
-def fail(msg, how):
-    global ok
-    ok = False
+def bad(msg, how):
+    global cfg_ok
+    cfg_ok = False
     print('  ✗ ' + msg)
     print('    → ' + how)
 
 
-print('=== 检查 config.json ===\n')
-
-if not os.path.exists(CFG):
-    print('  ✗ 没找到 config.json')
-    print(f'    → 应该放在：{CFG}')
-    print('    → 把仓库里的 config.example.json 复制过去，改个名，再填路径')
-    print(f'    → 命令：copy "{EXAMPLE}" "{CFG}"')
-    sys.exit(1)
-
-try:
-    cfg = json.load(open(CFG, encoding='utf-8'))
-except Exception as e:
-    print('  ✗ config.json 格式不对：' + str(e)[:80])
-    print('    → 检查是不是漏了逗号或引号，可以拿 config.example.json 对照')
-    sys.exit(1)
-
-if cfg.get('name', '').strip() in ('', '你的名字'):
-    fail('name 还没改', '把 "你的名字" 换成你自己的名字')
-
-for key, desc, ext in REQUIRED:
-    val = cfg.get(key)
-    if not val:
-        fail(f'{key}（{desc}）没填', '在 config.json 里补上这个字段')
-        continue
-    if key == 'name':
-        continue
-    p = val.replace('/', os.sep)
-    if not os.path.exists(p):
-        kind = '文件夹' if ext is None else '文件'
-        fail(f'{key}（{desc}）指向的{kind}不存在：{p}',
-             '确认路径写对了，分隔符用正斜杠 /')
-        continue
-    if ext and not p.lower().endswith(ext):
-        fail(f'{key} 后缀不对，应该是 {ext}', '检查是不是指到了别的文件')
-        continue
-    print(f'  ✓ {key} → {p}')
-
-# job_cache 只提示，不强制（首次运行会自动生成）
-jc = cfg.get('job_cache')
-if jc:
-    print(('  ✓ job_cache 已存在' if os.path.exists(jc.replace('/', os.sep))
-           else '  · job_cache 还没有，第一次找岗时会自动生成（约 40 秒）'))
-
-print()
-if not ok:
-    print('有项目没配好，按上面的提示改完再跑一次。')
-    sys.exit(1)
-
-# ---------- 环境检查 ----------
-print('\n=== 检查运行环境 ===\n')
-env_ok = True
+def p(v, default=None):
+    v = (v or '').replace('/', os.sep)
+    return v or default
 
 
-def check_env(name, cmd, hint, required=True):
-    global env_ok
-    import subprocess
+def check_config():
+    print('=== 配置文件 ===\n')
+
+    if not os.path.exists(CFG_PATH):
+        bad('没找到 config.json',
+            f'应该放在：{CFG_PATH}。把 {EXAMPLE} 复制过去，改个名，填上路径')
+        return None
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=20,
-                           encoding='utf-8', errors='replace')
-        out = (r.stdout or '').strip().splitlines()
-        ver = out[0] if out else ''
-        print(f'  ✓ {name}  {ver[:40]}')
-        return True
-    except Exception:
-        if required:
-            env_ok = False
-            print(f'  ✗ 缺少 {name}')
-            print(f'    → {hint}')
-        else:
-            print(f'  · 没有 {name}（做这步时会用到）')
-            print(f'    → {hint}')
-        return False
+        cfg = json.load(open(CFG_PATH, encoding='utf-8-sig'))
+    except Exception as e:
+        bad('config.json 格式不对：' + str(e)[:80],
+            '检查是不是漏了逗号或引号，可以拿 config.example.json 对照')
+        return None
 
+    print(f'  配置文件：{CFG_PATH}')
+    print(f'  数据目录：{DATA_DIR}\n')
 
-import shutil as _shutil
-node = _shutil.which('node') or r'D:\nodejs\node.exe'
-check_env('Node.js', [node, '--version'], '装 Node.js 18 以上：https://nodejs.org')
+    if not str(cfg.get('name', '')).strip() or cfg.get('name') == '你的名字':
+        bad('name 还没改', '把 "你的名字" 换成你自己的名字')
 
-# Playwright 是否装好
-try:
-    import subprocess
-    r = subprocess.run([node, '-e', "require('playwright');console.log('ok')"],
-                       capture_output=True, text=True, timeout=30, cwd=REPO)
-    if 'ok' in (r.stdout or ''):
-        print('  ✓ Playwright 已安装')
+    for key, desc, ext, kind in [
+        ('master_docx', '母版 Word', '.docx', 'file'),
+        ('master_pdf', '母版 PDF', '.pdf', 'file'),
+        ('resume_dir', '简历库文件夹', None, 'dir'),
+    ]:
+        path = p(cfg.get(key))
+        if not path:
+            bad(f'{key}（{desc}）没填', '在 config.json 里补上这个字段')
+            continue
+        if not os.path.exists(path):
+            bad(f'{key}（{desc}）不存在：{path}', '确认路径写对了，分隔符用正斜杠 /')
+            continue
+        if kind == 'dir' and not os.path.isdir(path):
+            bad(f'{key} 应该是个文件夹，现在指向了文件：{path}', '改成文件夹路径')
+            continue
+        if ext and not path.lower().endswith(ext):
+            bad(f'{key} 后缀不对，应该是 {ext}', '检查是不是指到了别的文件')
+            continue
+        print(f'  ✓ {key} → {path}')
+
+    # 锚点表：允许不存在
+    anchors = p(cfg.get('anchors'))
+    if not anchors:
+        print('  · anchors 没配，锚点表默认放数据目录下（阶段 3 生成）')
+    elif os.path.exists(anchors):
+        print(f'  ✓ anchors → {anchors}')
     else:
+        print(f'  · 锚点表还没生成：{anchors}')
+        print('    → 正常，第一次用之前跑一次 python scripts/make_anchors.py')
+
+    # 台账：只校验目录可写，文件可以不存在
+    tracker = p(cfg.get('tracker'))
+    if not tracker:
+        print('  · tracker 没配，台账默认放数据目录下')
+    else:
+        d = os.path.dirname(tracker) or '.'
+        if os.path.isdir(d) and os.access(d, os.W_OK):
+            state = '已存在' if os.path.exists(tracker) else '第一次投递时生成'
+            print(f'  ✓ tracker 目录可写 → {tracker}（{state}）')
+        else:
+            bad(f'tracker 的目录不存在或不可写：{d}', '改成一个你能写的目录')
+
+    cache = p(cfg.get('job_cache'))
+    if not cache:
+        print('  · job_cache 没配，岗位缓存默认放数据目录下')
+    elif os.path.exists(cache):
+        size = os.path.getsize(cache) / 1024 / 1024
+        print(f'  ✓ job_cache → {cache}（{size:.1f}MB）')
+    else:
+        print('  · 岗位缓存还没有，第一次找岗时自动同步（约一分半）')
+
+    return cfg
+
+
+def node_bin():
+    return shutil.which('node') or r'D:\nodejs\node.exe'
+
+
+def check_env():
+    global env_ok
+    print('\n=== 运行环境 ===\n')
+
+    node = node_bin()
+    try:
+        r = subprocess.run([node, '--version'], capture_output=True, text=True, timeout=20)
+        v = (r.stdout or '').strip()
+        if not v:
+            raise RuntimeError
+        print(f'  ✓ Node.js {v}')
+        major = int(v.lstrip('v').split('.')[0])
+        if major < 18:
+            print('    · 版本偏低，建议 18 以上（20 更好）')
+    except Exception:
+        env_ok = False
+        print('  ✗ 没找到 Node.js')
+        print('    → 装 20 以上：https://nodejs.org（LTS 版，一路下一步）')
+
+    try:
+        r = subprocess.run([node, '-e', "require('playwright');console.log('ok')"],
+                           capture_output=True, text=True, timeout=30, cwd=REPO)
+        if 'ok' in (r.stdout or ''):
+            print('  ✓ Playwright 已安装')
+        else:
+            env_ok = False
+            print('  ✗ Playwright 没装')
+            print('    → 在 jobfxxk 目录里执行：npm install')
+    except Exception:
         env_ok = False
         print('  ✗ Playwright 没装')
         print('    → 在 jobfxxk 目录里执行：npm install')
-except Exception:
-    env_ok = False
-    print('  ✗ Playwright 没装')
-    print('    → 在 jobfxxk 目录里执行：npm install')
 
-# pypdf
-try:
-    import pypdf
-    print(f'  ✓ pypdf {pypdf.__version__}')
-except ImportError:
-    env_ok = False
-    print('  ✗ 缺少 Python 库 pypdf')
-    print('    → 执行：pip install pypdf')
+    try:
+        import pypdf
+        print(f'  ✓ pypdf {pypdf.__version__}')
+    except ImportError:
+        env_ok = False
+        print('  ✗ 缺少 Python 库 pypdf')
+        print('    → 执行：python -m pip install pypdf')
 
-# Word（导出 PDF 要用）
-try:
-    import subprocess
-    r = subprocess.run(['powershell', '-NoProfile', '-Command',
-                        '(New-Object -ComObject Word.Application).Version'],
-                       capture_output=True, text=True, timeout=30,
-                       encoding='utf-8', errors='replace')
-    v = (r.stdout or '').strip()
-    if v and v[0].isdigit():
-        print(f'  ✓ Microsoft Word {v}')
-    else:
-        print('  · 没检测到 Word（微调简历导出 PDF 时会用到）')
-        print('    → 装 Word 或 WPS，否则只能用内置模板')
-except Exception:
-    print('  · 没检测到 Word（微调简历导出 PDF 时会用到）')
+    try:
+        r = subprocess.run(['powershell', '-NoProfile', '-Command',
+                            '(New-Object -ComObject Word.Application).Version'],
+                           capture_output=True, text=True, timeout=30,
+                           encoding='utf-8', errors='replace')
+        v = (r.stdout or '').strip()
+        if v and v[0].isdigit():
+            print(f'  ✓ Microsoft Word {v}')
+        else:
+            print('  · 没检测到 Word（导出 PDF 时会用到）')
+            print('    → 装 Word 或 WPS，否则只能用内置模板')
+    except Exception:
+        print('  · 没检测到 Word（导出 PDF 时会用到）')
 
-print()
-if env_ok:
-    print('配置和环境都没问题，可以开始用了。')
-    sys.exit(0)
-print('环境还差东西，按上面的提示装完再跑一次。')
-sys.exit(1)
+
+def main():
+    check_config()
+    check_env()
+
+    print()
+    if cfg_ok and env_ok:
+        print('配置和环境都没问题，可以开始用了。')
+        return 0
+    if not cfg_ok:
+        print('配置还有问题，按上面的提示改完再跑一次。')
+    if not env_ok:
+        print('环境还差东西，按上面的提示装完再跑一次。')
+    return 1
+
+
+if __name__ == '__main__':
+    sys.exit(main())

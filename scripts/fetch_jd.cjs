@@ -13,6 +13,7 @@
  * 读不到就明说读不到，不凭岗位名猜职责。
  */
 const { chromium } = require('playwright');
+const { launch } = require('./browser_config.cjs');
 
 const URL_ARG = process.argv[2];
 if (!URL_ARG) {
@@ -42,7 +43,13 @@ function cut(text, keys, stops) {
 }
 
 (async () => {
-  const b = await chromium.launch({ channel: 'msedge', headless: true });
+  let b;
+  try {
+    b = await launch(chromium, { headless: true });
+  } catch (e) {
+    console.log(JSON.stringify({ ok: false, note: String(e.message || e) }, null, 1));
+    process.exit(2);
+  }
   const page = await (await b.newContext()).newPage();
 
   // 顺手记录页面上出现过的 JSON 接口，方便判断该用哪个

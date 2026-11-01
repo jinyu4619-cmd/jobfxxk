@@ -21,102 +21,85 @@ description: 把秋招投递从头做到尾。用户给出简历或口述经历�
 
 ---
 
-## 第一次使用：三步配好（照着做，不用懂技术）
+## 第一次使用：说一句「开始」
 
-用户第一次打开时会卡在「文件放哪、配置怎么写」。直接念给他，一步一步来，每步做完再进下一步。
+用户装好之后，第一句话是「开始」或者「帮我投简历」。剩下的交给流程，不要让用户照着文档手操作。
 
-### 第一步：把两个文件夹放好
+**用户只需要准备两样**：简历的 Word 版和 PDF 版。两样都要——docx 用来改字，pdf 用来量版式。只有一份的话，用仓库内置的模板起步。
 
-`jobfxxk` 是 skill 本身，`jobfxxk-data` 是你自己的数据。**两个必须平级**，你的个人资料永远不进 skill 文件夹：
+**我会自己完成的**：检查环境、建数据目录、写配置、装缺的依赖、标定版面、同步岗位库。每一步只问一句，答完就往下走。
 
-```
-D:\27秋招\
-├── jobfxxk\          ← skill 本体（可以发到 GitHub，里面没有任何个人信息）
-├── jobfxxk-data\     ← 你的数据（配置、锚点表、加密文件、岗位缓存，都放这儿）
-│   └── config.json
-└── 简历库\
-    ├── docx\         ← 放母版 docx
-    └── pdf\          ← 放母版 pdf
-```
+**不需要用户做的事**：改 config.json、跑任何命令、记路径、判断现在该做哪个阶段。
 
-`jobfxxk-data` 第一次运行时会自动创建，不用你手动建。
+### 装在哪里
 
-**要点**：路径里不要有空格和特殊符号，放在 D 盘根目录下一层最好找。
+| 方式 | 适用 | 怎么装 |
+|---|---|---|
+| `.skill` 文件 | Claude 桌面版 | 下载后点「保存技能」 |
+| `git clone` | Claude Code | 克隆到 `~/.claude/skills/jobfxxk` |
+| 解压运行 | 只用脚本 | 解压到任意目录，跑 `python scripts/setup.py --check` |
 
-### 第二步：把配置文件复制到数据目录
-
-1. 打开 `jobfxxk` 文件夹，找到 `config.example.json`
-2. 复制到 `jobfxxk-data` 文件夹里，重命名为 `config.json`（去掉 `.example`）
-3. 用记事本打开它
-
-命令版：
-
-```bash
-mkdir "D:\27秋招\jobfxxk-data"
-copy "D:\27秋招\jobfxxk\config.example.json" "D:\27秋招\jobfxxk-data\config.json"
-```
-
-### 第三步：把路径改成你自己的
-
-文件打开后长这样，把引号里的路径换成你电脑上的真实位置：
-
-```json
-{
-  "name": "你的名字",
-  "master_docx": "D:/27秋招/简历库/docx/母版.docx",
-  "master_pdf":  "D:/27秋招/简历库/pdf/母版.pdf",
-  "anchors":     "D:/27秋招/jobfxxk-data/user/锚点表.json",
-  "resume_dir":  "D:/27秋招/简历库",
-  "job_cache":   "D:/27秋招/jobfxxk-data/data/jobs.json",
-  "tracker":     "D:/27秋招/投递跟踪/投递跟踪总表.md"
-}
-```
-
-**三条注意事项**（小白最常踩的坑）：
-
-- 路径分隔符用**正斜杠 `/`**，不要用反斜杠 `\`
-- `name` 填你身份证上的名字，它会出现在导出的文件名里
-- 改完保存，别改文件名，就叫 `config.json`，位置在 `jobfxxk-data` 里
-
-### 配好之后先验一下
-
-让用户说一句「检查配置」，然后跑：
-
-```bash
-python scripts/check_config.py
-```
-
-它会逐个检查七个路径存不存在、文件类型对不对，哪一项有问题直接说人话：「`master_docx` 指向的文件不存在，请确认路径」。全绿了再往下走。
-
-### 关于岗位库，用户什么都不用配
-
-岗位数据源是一个**公开的多维表格链接**，不需要注册、不需要登录、不需要申请密钥，链接已经写死在 `scripts/sync_jobs.cjs` 里。
-
-第一次找岗时会自动同步一次（约 40 秒），之后用本地缓存，缓存超过一天自动刷新。`data/` 目录已被 gitignore 排除，既不进仓库也不占体积。
+装成 skill 之后，代码在应用托管的目录里，**个人数据不跟着代码走**：配置、锚点表、岗位缓存都放在数据目录（默认是用户主目录下的 `jobfxxk-data`），升级不会覆盖。
 
 ---
 
-## 阶段 0 · 启动检查
+## 阶段 0 · 启动检查（状态机驱动）
 
-读 `jobfxxk-data/user/state.json` 和投递台账，给用户三行摘要：档案状态、台账待办、上次停在哪。
+用户说「开始」「继续」「帮我投简历」时，**先跑这一条，不要自己判断环境**：
 
-**状态文件格式**（每次阶段切换时更新，中断后可恢复）：
-
-```json
-{
-  "phase": "阶段 8 · 填表中",
-  "company": "某公司",
-  "position": "用户运营管培生",
-  "resume_version": "微调版",
-  "todo": ["性别未选", "到岗时间未选"],
-  "updated_at": "2026-10-31T16:20:00+08:00"
-}
+```bash
+python scripts/setup.py --check
 ```
 
-**恢复规则**：`phase` 不是「已完成」就读出来，告诉用户「上次停在填表，还差性别和到岗时间两处，继续吗」，不要重新走一遍流程。
+它返回一段 JSON，你只做三件事：
 
-- 没有档案 → 从阶段 1 开始
-- 有档案 → 跳到阶段 4
+1. `ready: true` → 读 `state.json` 和投递台账，给用户三行摘要，进阶段 1
+2. `ready: false` → 把 `ask` 原样念给用户，一句话，别改写成技术话
+3. 用户回答后 → 跑 `--apply <对应动作>`，它会再返回一次状态，回到第 2 步
+
+**一次只问一件事。** 状态机已经按优先级排好顺序，不要跳过当前卡点去问后面的问题。
+
+**不要替它回答。** `missing` 里列的是什么就是什么，别因为「看起来装过了」就跳过。
+
+### 状态与动作对照
+
+| status | 含义 | 用户会听到 | 动作 |
+|---|---|---|---|
+| `no_node` | 没有 Node.js | 「先装 Node，装完跟我说」 | 用户自己装 |
+| `no_resume` | 没有可用的简历 | 「给我 Word 和 PDF 各一份」 | `set_resume` 或 `use_template` |
+| `no_deps` | 缺填表组件 | 「还差一个组件，要装吗」 | `install_deps` |
+| `no_anchors` | 没标定版面 | 「量一下行宽，十几秒」 | `make_anchors` |
+| `no_jobs` | 岗位库没同步 | 「同步岗位库，一分半」 | `sync_jobs` |
+| `ready` | 全部就绪 | 「可以开始了」 | — |
+
+### 简历的两个版本（硬性要求）
+
+**要求用户同时提供 docx 和 pdf，不是二选一**：
+
+- **docx**：改字用。所有微调都在这份上原地替换，版式才不动
+- **pdf**：量版式用。每行能放多少字是从它反推的，没有它就没法保证改完不变形
+
+用户只给了一份，就明确告诉他：
+
+> 只有 PDF 的话我改不了字——PDF 里没有可编辑的段落。两个办法：把原来那份 Word 找出来给我；或者先用内置模板起步，你后面再换成自己的。
+
+选了模板就跑 `--apply use_template`。模板是固定骨架（3 段实习 / 2 个项目 / 1 段校园），装不下他的经历时，让他用 Word 打开自己加删条目。
+
+> 模板在 `assets/template/`：`简历模板.docx` 是脱敏的示例简历，`简历模板.pdf` 是它的导出件，两者必须成套，单独换一份会导致标定对不上。
+
+### 恢复规则
+
+`jobfxxk-data/user/state.json` 记录上次停在哪，用脚本读写，不要手改：
+
+```bash
+python scripts/state.py show
+python scripts/state.py set --phase "阶段 8 · 填表中" --company 某公司 \
+  --position 用户运营管培生 --todo "性别未选,到岗时间未选"
+```
+
+`phase` 不是「已完成」就直接接着走，告诉用户「上次停在填表，还差性别和到岗时间，继续吗」，**不要重走一遍已经做完的阶段**。
+
+每进入一个新阶段就更新一次 `phase`，这样中途断线也能接上。
 
 ---
 
@@ -196,8 +179,11 @@ echo '{"身份证号":"...","紧急联系人":"..."}' | python scripts/secure_st
 # 只列字段名，不显示值（可以随时告诉用户存了什么）
 python scripts/secure_store.py keys
 
-# 填表时临时解密读取
+# 看有哪些字段（值默认打码）
 python scripts/secure_store.py load
+
+# 填某个字段时，只取那一项的明文
+python scripts/secure_store.py load --field 身份证号
 
 # 用户反悔，一键删掉
 python scripts/secure_store.py delete
@@ -341,7 +327,7 @@ node scripts/fetch_jd.cjs "岗位详情页链接"
 
 ### 字数窗口（保证版式不变的关键）
 
-每个槽位有明确的字数区间。当前占两行的位置，窗口大约是 62–100 字：
+每个槽位有明确的字数区间，**具体数字以锚点表为准**，不要背数字。占两行的位置一般在 62–100 附近（每行 50 字左右的模板），但换个模板就完全不同：
 
 - 落在窗口内 → 版式一分不动
 - 低于下限 → 缩成一行，下面留白
@@ -407,11 +393,13 @@ python scripts/detect_browsers.py
 
 ### 7.1 开窗口
 
-用用户选定的那个浏览器起一个独立窗口，配置目录单独放（不动他日常那个，否则书签和登录态会串）。
-
 ```bash
-<config.browser_path> --remote-debugging-port=9222 --user-data-dir=<jobfxxk>/browser-profile --start-maximized <岗位地址>
+node scripts/browser.cjs launch "<岗位地址>"
 ```
+
+它会用用户选定的浏览器起一个独立窗口，配置目录放在 `jobfxxk-data/browser-profile`（不动他日常那个，否则书签和登录态会串），并记下 PID，用完 `node scripts/browser.cjs close` 能精确关掉这一个。
+
+**不要手敲浏览器启动命令。** 手敲的窗口没有 PID 记录，`close` 关不掉；profile 路径也容易和脚本用的对不上，导致「上次明明登录过」。
 
 后续所有操作都通过 CDP 连这个窗口，不用每次重开。
 
@@ -541,7 +529,16 @@ python scripts/write_tracker.py --company "某公司" --position "用户运营�
   --city 杭州 --resume "微调版" --link "https://..." --referral ABC123 --referral-from 用户
 ```
 
-它会追加一行并重算统计（累计投递 / 在流程中 / 已终止 / offer）。台账写到 `config.tracker` 同目录下的「投递台账.md」，**不动你原来那张表**。
+它会追加一行并重算统计（累计投递 / 待投递 / 在流程中 / 已终止 / offer）。台账文件就是 `config.tracker` 指的那个文件，表格之外你手写的备注不会被覆盖。
+
+状态变化时不要手改表格，用：
+
+```bash
+python scripts/write_tracker.py --update 3 --status 面试中 --next "10/28 二面"
+python scripts/write_tracker.py --list
+```
+
+阶段 5 定完志愿、还没投的时候，可以先用 `--status 待投递` 建草稿，投出去之后再 `--update` 改成已投递。
 
 > 详细规则见 `references/投递台账.md`
 
@@ -592,6 +589,8 @@ python scripts/write_tracker.py --company "某公司" --position "用户运营�
 | 脚本 | 作用 |
 |---|---|
 | `scripts/check_config.py` | 首次使用时检查 config.json 是否配好 |
+| `scripts/setup.py` | **启动入口**：检查状态、报告卡点、执行修复 |
+| `scripts/state.py` | 读写进度状态，断了能接上 |
 | `scripts/detect_browsers.py` | 扫描本机已装浏览器，供用户选择 |
 | `scripts/secure_store.py` | 敏感信息 DPAPI 加密存储（save/load/keys/delete） |
 | `scripts/make_anchors.py` | 标定模板，生成锚点表与字数窗口 |
@@ -601,4 +600,4 @@ python scripts/write_tracker.py --company "某公司" --position "用户运营�
 | `scripts/fetch_jd.cjs` | 后台读某条岗位的 JD 正文 |
 | `scripts/browser.cjs` | 浏览器操作：launch / dump / fill / upload / text / shot / pages / close |
 | `scripts/fill_engine.py` | 窗口校验 + Word 替换 + 版面复验 |
-| `scripts/write_tracker.py` | 追加投递记录并重算台账统计 |
+| `scripts/write_tracker.py` | 追加投递记录、改状态并重算台账统计 |
