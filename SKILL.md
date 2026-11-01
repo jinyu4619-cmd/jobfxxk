@@ -243,6 +243,14 @@ python scripts/secure_store.py delete
 
 填表遇到档案里没有的字段，**先查库**。没有就收集完当场写进去，下次不再问。
 
+### 出门前验一次
+
+```bash
+python scripts/verify.py profile
+```
+
+`ok: true` 才进阶段 3。不通过时 `issues` 里每一句都能直接念给用户——「档案缺出生日期」「这段经历没确认过」。**别自己判断齐没齐。**
+
 > 详细字段清单见 `references/问题库.md`
 
 ---
@@ -392,6 +400,16 @@ python scripts/fill_engine.py 草稿.json
 > 这一版我按 JD 微调过：改了 T 处说法，数字一个没动，经历顺序也没动。表单里会用这一版的内容填。要换回原版你说一声。
 
 用户拒绝就用原版，不争辩。
+
+### 出门前验一次
+
+```bash
+python scripts/verify.py layout "微调版.pdf 的路径"
+```
+
+它拿母版 PDF 和产出逐项比页数、首行、末行、行数。不通过就是版式真的动了，**不要用这一版投**——回去改字数重新生成，或者换回原版。
+
+`fill_engine` 自己也会打一行「版式未变 ✓」，但那是过程日志；这一条是验收结论，以它为准。
 
 > 详细规则见 `references/微调细则.md`
 
@@ -580,6 +598,14 @@ python scripts/write_tracker.py --list
 
 阶段 5 定完志愿、还没投的时候，可以先用 `--status 待投递` 建草稿，投出去之后再 `--update` 改成已投递。
 
+### 出门前验一次
+
+```bash
+python scripts/verify.py tracker
+```
+
+查序号有没有重、状态名是不是那七个之一、列有没有被打散、顺序有没有乱。不通过说明表格被手改过，按 `issues` 修回来。
+
 > 详细规则见 `references/投递台账.md`
 
 ---
@@ -632,6 +658,7 @@ python scripts/write_tracker.py --list
 | `scripts/setup.py` | **启动入口**：检查状态、报告卡点、执行修复 |
 | `scripts/state.py` | 读写进度状态，断了能接上 |
 | `scripts/profile.py` | 个人档案：静态信息、经历库、逐条确认 |
+| `scripts/verify.py` | 阶段验收：档案 / 简历 / 版式 / 台账 / 岗位库 |
 | `scripts/detect_browsers.py` | 扫描本机已装浏览器，供用户选择 |
 | `scripts/secure_store.py` | 敏感信息 DPAPI 加密存储（save/load/keys/delete） |
 | `scripts/make_anchors.py` | 标定模板，生成锚点表与字数窗口 |
