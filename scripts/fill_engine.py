@@ -47,6 +47,44 @@ def nospace(s):
     return ''.join(str(s).split())
 
 
+def docx_raw_texts(docx):
+    """把 docx 里的段落原文取出来，**保留原有空格**
+
+    为什么不能用去掉空格的版本：Word 的查找是字面匹配。文档里
+    「某大学 学生会  宣传部部长」如果被我们抹成「某大学学生会宣传部部长」，
+    这串字在文件里根本不存在，查找必然失败。
+    """
+    import re, zipfile
+    x = zipfile.ZipFile(docx).read('word/document.xml').decode('utf-8', 'ignore')
+    out = []
+    for p in re.findall(r'<w:p\b[^>]*>.*?</w:p>', x, re.S):
+        t = ''.join(re.findall(r'<w:t[^>]*>([^<]*)</w:t>', p))
+        if t.strip():
+            out.append(t)
+    return out
+
+
+def resolve_old(raws, old):
+    """在一段真实文本里，找到和 old 去空格后等价的那一段（含它原本的空格）
+
+    例：old =「某大学学生会宣传部部长」→ 真实文本里是「某大学学生会 宣传部部长」
+    返回真实的那一段，供 Word 精确查找。
+    """
+    target = nospace(old)
+    if not target:
+        return None
+    for raw in raws:
+        idx = [i for i, ch in enumerate(raw) if not ch.isspace()]
+        flat = ''.join(raw[i] for i in idx)
+        k = flat.find(target)
+        if k < 0:
+            continue
+        start = idx[k]
+        end = idx[k + len(target) - 1] + 1
+        return raw[start:end]
+    return None
+
+
 def load_anchors():
     if not ANCHOR:
         print('config.json 里没填 anchors（锚点表）。先跑 python scripts/make_anchors.py。')
@@ -198,7 +236,23 @@ def main():
         os.remove(tmp_pdf)
 
     print('\n=== 执行替换 ===')
-    log = apply_with_word(tmp_docx, tmp_pdf, [(e['old'], e['new']) for e in ok_list]).strip()
+    raws = docx_raw_texts(tmp_docx)
+    pairs, unresolved, adjusted = [], [], 0
+    for e in ok_list:
+        real = resolve_old(raws, e['old'])
+        if real is None:
+            unresolved.append(e)
+            real = e['old']
+        elif real != e['old']:
+            adjusted += 1
+        pairs.append((real, e['new']))
+    if adjusted:
+        print(f'  {adjusted} 条按文档里的实际空格做了对齐')
+    if unresolved:
+        print('  以下片段在 docx 里找不到对应的文字，多半跨了段落：')
+        for e in unresolved:
+            print('    · ' + e['old'][:30])
+    log = apply_with_word(tmp_docx, tmp_pdf, pairs).strip()
     for line in log.splitlines():
         if line.strip():
             print('  ' + line.strip())
