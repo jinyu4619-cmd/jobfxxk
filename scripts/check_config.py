@@ -133,18 +133,19 @@ def check_env():
         print('    → 装 20 以上：https://nodejs.org（LTS 版，一路下一步）')
 
     try:
-        r = subprocess.run([node, '-e', "require('playwright');console.log('ok')"],
-                           capture_output=True, text=True, timeout=30, cwd=REPO)
+        probe = "require('./ensure_deps.cjs');require('playwright');console.log('ok')"
+        r = subprocess.run([node, '-e', probe], capture_output=True, text=True,
+                           timeout=30, cwd=HERE)
         if 'ok' in (r.stdout or ''):
             print('  ✓ Playwright 已安装')
         else:
             env_ok = False
             print('  ✗ Playwright 没装')
-            print('    → 在 jobfxxk 目录里执行：npm install')
+            print('    → 跑 python scripts/setup.py --apply install_deps 自动装到数据目录')
     except Exception:
         env_ok = False
         print('  ✗ Playwright 没装')
-        print('    → 在 jobfxxk 目录里执行：npm install')
+        print('    → 跑 python scripts/setup.py --apply install_deps 自动装到数据目录')
 
     try:
         import pypdf

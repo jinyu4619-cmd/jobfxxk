@@ -254,7 +254,7 @@ jobfxxk/
 ## 常见问题
 
 **Q：跑 `node scripts/xxx.cjs` 报 `Cannot find module 'playwright'`**
-在 `jobfxxk` 目录里执行 `npm install`。
+跑 `python scripts/setup.py --apply install_deps`。依赖装在**数据目录**的 `deps/` 下，不装进技能目录——技能目录在升级时会被替换，装那里等于白装。
 
 **Q：`check_config.py` 说找不到 config.json**
 它应该在 `jobfxxk-data/config.json`，不在仓库里。按「第一次配置」三步走一遍。

@@ -15,6 +15,7 @@
  * fill 的 json 格式：
  *   [{"label":"姓名","value":"张三"},{"label":"邮箱","value":"a@b.com"}]
  */
+require('./ensure_deps.cjs');
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');

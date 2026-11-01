@@ -91,15 +91,7 @@ def deps_missing():
     miss = []
     if not has_pypdf():
         miss.append('pypdf')
-    node = node_bin()
-    if not node:
-        return miss + ['playwright']
-    try:
-        r = subprocess.run([node, '-e', "require('playwright');console.log('ok')"],
-                           capture_output=True, text=True, timeout=30, cwd=REPO)
-        if 'ok' not in (r.stdout or ''):
-            miss.append('playwright')
-    except Exception:
+    if not playwright_ok():
         miss.append('playwright')
     return miss
 
@@ -257,19 +249,29 @@ def act_use_template(args):
     print('装不下你的经历时，用 Word 打开它自己加删条目，或者换成你自己的 docx+pdf。')
 
 
-def act_install_deps(_):
+def playwright_ok():
+    """和运行期同一套解析规则：仓库里的 node_modules 或数据目录的 deps 都算"""
     node = node_bin()
-    # Playwright
+    if not node:
+        return False
+    probe = "require('./ensure_deps.cjs');require('playwright');console.log('ok')"
     try:
-        r = subprocess.run([node, '-e', "require('playwright');console.log('ok')"],
-                           capture_output=True, text=True, timeout=30, cwd=REPO)
-        has_pw = 'ok' in (r.stdout or '')
+        r = subprocess.run([node, '-e', probe], capture_output=True, text=True,
+                           timeout=30, cwd=HERE)
+        return 'ok' in (r.stdout or '')
     except Exception:
-        has_pw = False
-    if not has_pw:
-        print('正在装 Playwright（npm install）…')
-        r = subprocess.run(['npm', 'install'], cwd=REPO, capture_output=True, text=True,
-                           shell=(os.name == 'nt'), timeout=600)
+        return False
+
+
+def act_install_deps(_):
+    # Playwright 装到数据目录，不往技能目录里写——托管目录可能是只读的，升级也会被替换
+    if not playwright_ok():
+        deps = os.path.join(DATA_DIR, 'deps')
+        os.makedirs(deps, exist_ok=True)
+        print(f'正在装 Playwright 到 {deps} …')
+        npm = shutil.which('npm') or r'D:\nodejs\npm.cmd'
+        r = subprocess.run([npm, 'install', 'playwright', '--prefix', deps],
+                           capture_output=True, text=True, shell=(os.name == 'nt'), timeout=900)
         if r.returncode != 0:
             sys.exit('npm install 失败：' + ((r.stderr or r.stdout or '')[-300:]))
         print('  完成')

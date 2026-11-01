@@ -17,6 +17,7 @@
  *   node sync_jobs.cjs --quiet
  *   node sync_jobs.cjs --out=./data
  */
+require('./ensure_deps.cjs');       // 依赖可能装在数据目录，先挂上搜索路径
 const { chromium } = require('playwright');
 const { launch } = require('./browser_config.cjs');
 const { config, dataDir } = require('./config.cjs');

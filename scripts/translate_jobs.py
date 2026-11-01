@@ -24,6 +24,7 @@ OPTFILE = os.path.join(DATA_DIR, 'options.json')
 PROBE_PATH = os.path.join(HERE, '_probe_meta.cjs')
 
 PROBE = r'''
+require('./ensure_deps.cjs');
 const { chromium } = require('playwright');
 const { launch } = require('./browser_config.cjs');
 const zlib = require('zlib');

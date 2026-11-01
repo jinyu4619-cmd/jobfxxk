@@ -12,6 +12,7 @@
  *
  * 读不到就明说读不到，不凭岗位名猜职责。
  */
+require('./ensure_deps.cjs');
 const { chromium } = require('playwright');
 const { launch } = require('./browser_config.cjs');
 
