@@ -295,6 +295,23 @@ def act_make_anchors(_):
         sys.exit('标定失败')
 
 
+def cache_untranslated():
+    """同步时如果拿不到字段元数据，城市/学历会留成 optXXX 内部 ID，这时才需要单独翻译"""
+    import re
+    cache = path_or('job_cache', os.path.join('data', 'jobs.json'))
+    if not os.path.exists(cache):
+        return False
+    try:
+        d = json.load(open(cache, encoding='utf-8-sig'))
+    except Exception:
+        return True
+    for r in (d.get('rows') or [])[:200]:
+        for v in r.values():
+            if isinstance(v, str) and re.search(r'\bopt[A-Za-z0-9]{4,}', v):
+                return True
+    return False
+
+
 def act_sync_jobs(_):
     node = node_bin()
     print('同步岗位库，大约一分半…')
@@ -305,8 +322,12 @@ def act_sync_jobs(_):
     if r.returncode != 0:
         sys.exit('岗位库同步失败')
 
-    # 同步下来的是选项内部 ID（optXXX），不翻译成中文，按城市/学历筛全是 0 条
-    print('把选项 ID 翻成中文…')
+    # 同步时通常已经把选项翻译好了（元数据就在同一次会话里），
+    # 只有没抓到元数据、留了 optXXX 的时候才需要再跑一遍翻译。
+    if not cache_untranslated():
+        print('选项已经是中文，跳过翻译')
+        return
+    print('缓存里还有未翻译的选项，补一次翻译…')
     r2 = subprocess.run([sys.executable, os.path.join(HERE, 'translate_jobs.py')],
                         capture_output=True, text=True, encoding='utf-8', errors='replace')
     out2 = (r2.stdout or '').strip().splitlines()

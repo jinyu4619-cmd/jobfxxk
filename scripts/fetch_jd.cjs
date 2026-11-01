@@ -63,7 +63,12 @@ function cut(text, keys, stops) {
   let text = '';
   try {
     await page.goto(URL_ARG, { waitUntil: 'domcontentloaded', timeout: 45000 });
-    await page.waitForTimeout(4500);
+    // 等「网络静下来」而不是死等 4.5 秒；再等正文里真的出现 JD 小标题
+    await page.waitForLoadState('networkidle', { timeout: 8000 }).catch(() => {});
+    await page.waitForFunction(
+      () => /岗位职责|工作职责|职位描述|任职要求|任职资格|岗位要求/.test(document.body.innerText),
+      { timeout: 4000 }
+    ).catch(() => {});
     text = await page.evaluate(() => document.body.innerText);
   } catch (e) {
     console.log(JSON.stringify({ ok: false, note: '页面打不开：' + String(e).slice(0, 80) }, null, 1));

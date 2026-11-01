@@ -45,17 +45,19 @@ const TABLE = '__TABLE__';
       }
     } catch (e) {}
   });
-  // 元数据是页面自己请求的，不一定会立刻到；最多试三次，抓到就停
-  for (let i = 0; i < 3 && !metas[TABLE]; i++) {
-    await page.goto(BASE + '/base/' + APP + '?table=' + TABLE, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
-    await page.waitForTimeout(9000);
+  // 打开表页，等它自己请求 tablesv3；拿到就立刻走，最多等 12 秒
+  await page.goto(BASE + '/base/' + APP + '?table=' + TABLE, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
+  const t0 = Date.now();
+  while (!metas[TABLE] && Date.now() - t0 < 12000) {
+    await page.waitForTimeout(250);
   }
+  // 还没抓到，换另外两张表各试一次（有的表要切过去才会拉元数据）
   if (!metas[TABLE]) {
     for (const tid of ['__REF__', '__MAJ__']) {
-      if (!tid) continue;
+      if (!tid || metas[TABLE]) continue;
       await page.goto(BASE + '/base/' + APP + '?table=' + tid, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
-      await page.waitForTimeout(9000);
-      if (metas[TABLE]) break;
+      const t1 = Date.now();
+      while (!metas[TABLE] && Date.now() - t1 < 6000) await page.waitForTimeout(250);
     }
   }
   await b.close();

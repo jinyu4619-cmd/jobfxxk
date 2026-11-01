@@ -143,32 +143,48 @@ const PULL = async ({ base, app, tableId, fieldNames, startOffset, pages, pageSi
 
   log('启动浏览器，建立访客会话…');
 
-  // 字段名只在页面自己请求 tablesv3 时才会带全，直接 fetch 拿不到，所以先挂监听
+  // 字段名只在页面自己请求 tablesv3 时才会带全，直接 fetch 拿不到，所以先挂监听。
+  // 拿到就立刻往下走，不再固定等 6 秒——等的是「响应到了」这个事件，不是时间。
   let metaBody = null;
+  let metaResolve;
+  const metaReady = new Promise(r => { metaResolve = r; });
   page.on('response', (res) => {
     if (/tablesv3/.test(res.url()) && !metaBody) {
-      res.text().then(t => { if (!metaBody) metaBody = t; }).catch(() => {});
+      res.text().then(t => { if (!metaBody) { metaBody = t; metaResolve(true); } }).catch(() => {});
     }
   });
 
   // 必须带 ?table= 打开，否则页面不会请求该表的元数据，字段名和选项映射都拿不到
   await page.goto(`${BASE}/base/${APP}?table=${TABLES.jobs.id}`, { waitUntil: 'domcontentloaded', timeout: 45000 }).catch(() => {});
-  await page.waitForTimeout(6000);
 
-  const probe = await page.evaluate(async (u) => {
+  // 会话是否可用，轮询到通为止（通常 300ms 内），最多等 12 秒
+  const probeUrl = `${BASE}/space/api/v1/bitable/${APP}/records?tableID=${TABLES.jobs.id}&offset=0`;
+  const askProbe = () => page.evaluate(async (u) => {
     try {
       const r = await fetch(u, { credentials: 'include' });
       const j = await r.json();
       return { code: j.code, hasRecords: !!(j.data && j.data.records) };
     } catch (e) { return { err: String(e).slice(0, 60) }; }
-  }, `${BASE}/space/api/v1/bitable/${APP}/records?tableID=${TABLES.jobs.id}&offset=0`);
+  }, probeUrl);
+
+  let probe = { code: -1 };
+  const t0 = Date.now();
+  while (Date.now() - t0 < 12000) {
+    probe = await askProbe();
+    if (probe.code === 0 && probe.hasRecords) break;
+    await sleep(300);
+  }
 
   if (!(probe.code === 0 && probe.hasRecords)) {
     console.error('会话建立失败：' + JSON.stringify(probe));
     await browser.close();
     process.exit(2);
   }
-  log('会话可用\n');
+  log(`会话可用（${Date.now() - t0}ms）`);
+
+  // 元数据再给最多 8 秒；拿不到就走内置字段映射兜底
+  await Promise.race([metaReady, sleep(8000)]);
+  log(metaBody ? '字段结构与选项映射已拿到\n' : '⚠ 元数据没抓到，走内置映射兜底\n');
 
   fs.mkdirSync(outDir, { recursive: true });
   const summary = [];
