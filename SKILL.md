@@ -161,10 +161,12 @@ python scripts/profile.py exp list
 
 ```bash
 python scripts/profile.py exp set --file 草稿.json     # 写入/合并，返回 id
-python scripts/profile.py exp confirm exp_001          # 每条确认后单独跑
+python scripts/profile.py exp confirm exp_001 --metrics "80%,95%"   # 逐条确认
 ```
 
-`confirm` 会自动写 `confirm-log.md`，记下谁在什么时候确认了哪条、包含哪些数字。**没确认的不许进简历。**
+`confirm` 这一步有硬闸：**这条经历只要有数字，必须带 `--metrics`**，把刚才逐个数念给用户、他确认过的数字报回来。脚本会跟记录里的数字比对，少一个、错一个都拒绝确认——这样「数字核过」才有痕迹，不是嘴上说说。
+
+`confirm` 还会自动写 `confirm-log.md`，记下确认时间和包含的数字。**没确认的不许进简历**，`verify.py profile` 会拦。
 
 > 详细规则见 `references/信息库规范.md`
 
@@ -184,41 +186,62 @@ python scripts/profile.py exp confirm exp_001          # 每条确认后单独�
 python scripts/profile.py missing
 ```
 
-返回 JSON，`required: true` 的才是必填。**只问这些，已经有的一个字都不要重问。**
+返回 JSON，每项带 `tier`，按这个顺序问，**只问这些，已经有的一个字都不要重问**：
 
-写完再跑一次确认缺口清零：
+| tier | 含义 | 怎么处理 |
+|---|---|---|
+| `required` | 必填，缺了投不了 | 直接问 |
+| `needs_auth` | 敏感项，用户还没选处理方式 | 先问处理方式（见下），别直接问内容 |
+| `suggest` | 常见但非必填 | 一并问，用户不想说就跳过 |
+| `self_fill` | 用户选了「全部自己填」 | 不问，填表时提示他自己输 |
+
+写完再跑一次确认缺口：
 
 ```bash
 python scripts/profile.py set --file 档案.json     # 中文走文件，不要用管道
-python scripts/profile.py show                     # 人看的版本，敏感字段自动打码
+python scripts/profile.py show                     # 人是看的版本，敏感项自动打码
 ```
 
-档案字段按 `references/信息库规范.md` 的定义存，不要自己发明键名。
+**字段表以 `references/问题库.md` 为准**（53 个字段，A–F 六类），脚本里已经按那份表定义好了，不要自己发明键名。
+
+### 普通和敏感分开存
+
+| 级别 | 包含 | 存哪 |
+|---|---|---|
+| **P2 常规** | 姓名、性别、出生日期、手机、邮箱、学校、专业、学院、时间、意向 | `profile.json`（明文） |
+| **P1 敏感** | 籍贯、政治面貌、身高体重、证件照、户口与档案所在地 | `sensitive.bin`（DPAPI） |
+| **P0 极敏感** | 证件号码、紧急联系人及电话、家庭住址、家庭成员 | `sensitive.bin`，**默认不代填** |
+
+`profile.py set` 会按级别自动分流——传一个 JSON 进去，普通的进明文文件，敏感的进加密文件，你不用自己分。
 
 ### 先问处理方式
 
-> 网申表单里有些简历上没有的信息，我提前收集。分两类：
->
-> **普通信息**：性别、出生日期、学院、籍贯、身高体重、是否统招、应届往届、毕业时间、英语等级、现居城市。这些我帮你填，填一次所有公司通用。
->
-> **敏感信息**：身份证号、家人及紧急联系人。这类我会单独加密存，也可以每次你自己输。
->
-> 你想怎么处理？
-> **A. 全部我代填**（推荐，存在你本地加密文件里）
-> **B. 普通信息我代填，敏感信息每次你自己输**
-> **C. 全你自己填，我只提醒该填什么**
+> 身份证号、紧急联系人这类信息，你希望我怎么处理？
+> **A. 全部由我代填**（加密存在你本地）
+> **B. 我只填常规信息，证件号和紧急联系人每次你自己输**（推荐）
+> **C. 全部你自己填，我只提示该填什么**
 
-选 A 或 B 都引导用户把信息发过来，存进对应文件。
+用户选完记下来：`python scripts/profile.py mode A|B|C`。选 B 之后，`missing` 里不会再把敏感项当缺口问，只在填表时提醒。
+
+### 最后整体念一遍
+
+字段收完、经历确认完，**必须再整体复述一次让用户确认**：
+
+```bash
+python scripts/profile.py review
+```
+
+单条都对，不代表整体没矛盾——籍贯和期望城市都写着「全国」这种默认值没改，就是典型。`review` 会打电话式地念一遍并记下确认时间，没做过这一步 `check` 会报「还没做整体复述确认」。
 
 ### 存储
 
 ```
 数据目录/user/
-├── profile.json      普通信息（明文，本地）
-├── sensitive.bin     敏感信息（DPAPI 加密，只有本机本人能解）
+├── profile.json      常规信息（P2，明文）
+├── sensitive.bin     敏感信息（P0/P1，DPAPI 加密，只有本机本人能解）
 ├── experience.json   经历
 ├── state.json        当前进度（中断后可恢复）
-└── confirm-log.md    确认记录
+└── confirm-log.md    确认记录（永不写 P0）
 ```
 
 **都在仓库外面**，不和代码放一起。仓库文件夹永远是干净的。
@@ -278,13 +301,18 @@ python scripts/verify.py profile
 
 ### 选 B 的准入条件
 
-**docx + PDF 缺一不可。** PDF 定版式基准（打印出来什么样），docx 作编辑源（微调只改它，再重新导出）。
+**docx 是主，PDF 是附。** docx 是编辑源（微调只改它），PDF 定版式基准、也是要交给 HR 打印的那份。
 
-只有 PDF → 不接受，说明原因：PDF 里文字是固定坐标，改一个字就可能挤出边界，而这份 PDF 是要给 HR 打印的。给两条出路——找原始排版文件导出 docx，或者用内置模板。
+| 用户手里有 | 怎么做 |
+|---|---|
+| **docx + pdf** | 直接用，但要核对两份内容一致（段落数、公司名、时间对不上就问以哪份为准） |
+| **只有 docx** | 直接收下，用 Word 导出 PDF：`setup.py --apply set_resume --docx 路径`，脚本会自己导 |
+| **只有 pdf** | **不接受**。让他用 Word 打开这个 PDF、另存为 .docx 再给——PDF 里文字是固定坐标，我改不动。或者用内置模板 |
+| **都没有** | 内置模板起步 |
 
-只有 docx → 请用户导出 PDF 补上。
+为什么非要 docx：微调靠的是 Word 在原件上原地改字，PDF 没有可编辑的段落。为什么还要 PDF：每行能放多少字是从 PDF 的实际排版反推的，而且这份 PDF 是 HR 会打印出来看的东西。
 
-**内容一致性校验**：两边各抽全文比对，段落数、公司名、时间对不上就问以哪份为准。
+**不要自动把 PDF 转成 Word。** 实测过：Word 打开 PDF 会弹「转换为可编辑文档」的确认框，无人值守时卡死；转出来的双栏和文本框也容易散架。让用户手动做这一步，他看得见结果。
 
 ### 标定用户模板
 
@@ -318,7 +346,7 @@ python scripts/compose.py --draft 填充稿.json
 
 填充稿两段：`replace` 是按槽位的等长替换（超窗直接拒绝，不写）；`extra` 是装不下的经历，会在文末生成文本框，由用户自己拖。
 
-**产出不导出 PDF**，落在 `<简历库>/待排版/`，等用户用 Word 排。
+**产出不导出 PDF**，直接进 `<简历库>/docx/`，文件名是 `<姓名> - <版本名>.docx`，等用户用 Word 排。排完导出的 PDF 放 `<简历库>/pdf/`，同名。
 
 流程固定为五步，不要跳：
 
@@ -440,7 +468,7 @@ node scripts/fetch_jd.cjs "岗位详情页链接"
 ### 执行
 
 ```bash
-python scripts/fill_engine.py 草稿.json
+python scripts/fill_engine.py 草稿.json --out "公司 岗位"
 ```
 
 草稿格式：`[{"old": "原文片段", "new": "替换后文本", "why": "为什么改"}]`
@@ -710,7 +738,7 @@ python scripts/verify.py tracker
 | `scripts/setup.py` | **启动入口**：检查状态、报告卡点、执行修复 |
 | `scripts/state.py` | 读写进度状态，断了能接上 |
 | `scripts/read_resume.py` | 把 docx/pdf 读成干净文本（处理文本框、副本、PDF 字间空格） |
-| `scripts/compose.py` | 把经历灌进模板，产出待排版 docx（不导出 PDF） |
+| `scripts/compose.py` | 把经历灌进模板，产出 docx 进简历库（不导出 PDF） |
 | `scripts/profile.py` | 个人档案：静态信息、经历库、逐条确认 |
 | `scripts/verify.py` | 阶段验收：档案 / 简历 / 版式 / 台账 / 岗位库 |
 | `scripts/detect_browsers.py` | 扫描本机已装浏览器，供用户选择 |

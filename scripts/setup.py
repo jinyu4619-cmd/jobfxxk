@@ -146,12 +146,12 @@ def build_state():
 
     if not ok:
         return dict(status='no_resume', ready=False, blocking=True,
-                    ask='把你的简历给我：Word 版和 PDF 版各一份，两样都要——'
-                        'docx 用来改字，pdf 用来量版式。只有一份的话，我会用内置模板起步，'
-                        '你后面再换成自己的。',
+                    ask='把你的简历给我，最省事的是 Word 版（.docx）——我拿它改字，PDF 我可以自己导。'
+                        '只有 PDF 也行，但要你先在 Word 里打开它、另存为 .docx 再给我；'
+                        '不然排版我改不动。两样都没有的话，我用内置模板起步。',
                     actions=[dict(id='use_template', label='用内置模板起步'),
-                             dict(id='set_resume', label='我有 docx 和 pdf',
-                                  args='--docx 路径 --pdf 路径 [--name 姓名]')],
+                             dict(id='set_resume', label='我有 Word 简历（PDF 有就给，没有我导）',
+                                  args='--docx 路径 [--pdf 路径] [--name 姓名]')],
                     done=done, missing=missing, reason=why,
                     data_dir=DATA_DIR, config_path=CFG_PATH)
 
@@ -203,24 +203,73 @@ def _write_base_cfg(name, docx, pdf, resume_dir):
     return cfg
 
 
+def word_export_pdf(docx, pdf):
+    """用 Word 把 docx 导成 pdf。返回 (ok, 说明)"""
+    ps = '''
+$ErrorActionPreference = "Stop"
+$w = $null; $d = $null
+try {
+  $w = New-Object -ComObject Word.Application
+  $w.Visible = $false; $w.DisplayAlerts = 0
+  $d = $w.Documents.Open("%s", $false, $true)
+  $d.ExportAsFixedFormat("%s", 17)
+  Write-Output ("PAGES=" + $d.ComputeStatistics(2))
+}
+catch { Write-Output ("ERR=" + $_.Exception.Message) }
+finally {
+  if ($d -ne $null) { try { $d.Close(0) } catch {} }
+  if ($w -ne $null) { try { $w.Quit() } catch {} }
+}
+''' % (docx.replace('"', '`"'), pdf.replace('"', '`"'))
+    f = os.path.join(DATA_DIR, 'tmp', '_export.ps1')
+    os.makedirs(os.path.dirname(f), exist_ok=True)
+    open(f, 'w', encoding='utf-8-sig').write(ps)
+    try:
+        r = subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', f],
+                           capture_output=True, text=True, timeout=120)
+    except subprocess.TimeoutExpired:
+        return False, 'Word 超过 120 秒没响应（可能是弹了对话框，或者文档太大）'
+    out = ((r.stdout or '') + (r.stderr or '')).strip()
+    if 'ERR=' in out:
+        return False, out[out.index('ERR='):][:200]
+    if not os.path.exists(pdf):
+        return False, '没生成 PDF'
+    return True, out
+
+
 def act_set_resume(args):
     docx = p(args.get('docx'))
     pdf = p(args.get('pdf'))
-    if not docx or not pdf:
-        sys.exit('要给 --docx 和 --pdf 两个路径。只有一份的话，用 --apply use_template。')
-    for path, ext, label in [(docx, '.docx', 'Word 版'), (pdf, '.pdf', 'PDF 版')]:
-        if not os.path.exists(path):
-            sys.exit(f'{label}找不到：{path}')
-        if not path.lower().endswith(ext):
-            sys.exit(f'{label}应该是 {ext} 文件，你给的是：{path}')
-    name = args.get('name') or os.path.splitext(os.path.basename(docx))[0]
+    name = args.get('name')
+
+    if not docx:
+        sys.exit('要 --docx 指定你的 Word 简历。只有 PDF 的话，先在 Word 里打开它、另存为 .docx，再来。')
+
+    if not os.path.exists(docx):
+        sys.exit(f'找不到这个文件：{docx}')
+    if not docx.lower().endswith('.docx'):
+        sys.exit(f'要 .docx 文件，你给的是：{docx}')
+
+    # 没有 pdf 就用 Word 现导一份——版式基准和上传件都靠它
+    if not pdf:
+        stem = os.path.splitext(os.path.basename(docx))[0]
+        pdf = os.path.join(os.path.dirname(os.path.dirname(docx)), 'pdf', stem + '.pdf')
+        os.makedirs(os.path.dirname(pdf), exist_ok=True)
+        print(f'没给 PDF，我用 Word 从 docx 导一份：{pdf}')
+        ok, msg = word_export_pdf(docx, pdf)
+        if not ok:
+            sys.exit('自动导出 PDF 失败：' + msg + '\n可以自己在 Word 里「另存为 PDF」，再把路径给我。')
+        print('  导出完成 ' + msg.strip())
+
+    if not os.path.exists(pdf):
+        sys.exit(f'找不到这个 PDF：{pdf}')
+
+    name = name or os.path.splitext(os.path.basename(docx))[0]
     resume_dir = os.path.dirname(docx)
-    # 常见布局是 简历库/docx/ 与 简历库/pdf/，简历库应该是它们上一级
     if os.path.basename(resume_dir).lower() in ('docx', 'word', '文档'):
         resume_dir = os.path.dirname(resume_dir)
     _write_base_cfg(name, docx, pdf, resume_dir)
-    print(f'已记下简历：{docx}')
-    print(f'            {pdf}')
+    print(f'已记下简历：\n  {docx}\n  {pdf}')
     print(f'简历库：{resume_dir}')
 
 

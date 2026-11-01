@@ -121,11 +121,14 @@ def main():
         print('\n没有可写入的内容，退出。')
         return
 
-    out_dir = os.path.join(fe.RESUME_DIR or fe.DATA_DIR, '待排版')
-    os.makedirs(out_dir, exist_ok=True)
+    # 产出直接进简历库的 docx/，和微调版放一起；pdf 等用户排完再导出
+    docx_dir, _pdf_dir = fe.out_dirs()
+    os.makedirs(docx_dir, exist_ok=True)
     name = fe.CFG.get('name') or '简历'
-    out_name = argv[argv.index('--out') + 1] if '--out' in argv else f'{name} - 待排版.docx'
-    out = os.path.join(out_dir, out_name)
+    if '--out' not in argv:
+        sys.exit('要给 --out 指定这一版的名字，例如 --out "张三 简历初稿"，否则会互相覆盖。')
+    out_name = argv[argv.index('--out') + 1]
+    out = os.path.join(docx_dir, f'{name} - {out_name}.docx')
     shutil.copy2(master, out)
 
     raws = fe.docx_raw_texts(out)

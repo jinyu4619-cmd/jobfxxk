@@ -34,13 +34,11 @@ RESUME_DIR = (CFG.get('resume_dir') or '').replace('/', os.sep)
 TMP = os.path.join(DATA_DIR, 'tmp')
 
 
-def out_dir():
-    d = (CFG.get('work_dir') or '').replace('/', os.sep)
-    if d:
-        return d
-    if RESUME_DIR:
-        return os.path.join(RESUME_DIR, '微调版')
-    return os.path.join(DATA_DIR, '微调版')
+def out_dirs():
+    """产出直接进简历库的 docx/ 与 pdf/，不再单开「微调版」目录。
+    每个岗位一版，同一个版本名在两处一一对应。"""
+    base = (CFG.get('work_dir') or '').replace('/', os.sep) or RESUME_DIR or DATA_DIR
+    return os.path.join(base, 'docx'), os.path.join(base, 'pdf')
 
 
 def nospace(s):
@@ -195,9 +193,12 @@ def find_draft(argv):
 def main():
     argv = sys.argv
     draft_path = find_draft(argv)
-    out_name = '微调版'
-    if '--out' in argv:
-        out_name = argv[argv.index('--out') + 1]
+    # 每个岗位一版，必须给出版本名（公司+岗位），否则会互相覆盖
+    if '--out' not in argv:
+        print('要给 --out 指定这一版的名字，例如 --out "Babycare 线上渠道运营"。')
+        print('不加的话，第二家公司会把第一家的文件直接覆盖掉。')
+        sys.exit(2)
+    out_name = argv[argv.index('--out') + 1]
 
     MASTER_PATH = need('master_docx', '母版 Word')
     BASE_PDF_PATH = need('master_pdf', '母版 PDF')
@@ -286,12 +287,13 @@ def main():
             and abs(a['bottom'] - b['bottom']) <= 2)
     print('  结论：' + ('版式未变 ✓' if same else '版式有位移 ✗'))
 
-    d = out_dir()
-    os.makedirs(d, exist_ok=True)
+    docx_dir, pdf_dir = out_dirs()
+    os.makedirs(docx_dir, exist_ok=True)
+    os.makedirs(pdf_dir, exist_ok=True)
     name = CFG.get('name') or '简历'
     stem = f'{name} - {out_name}'
-    out_docx = os.path.join(d, stem + '.docx')
-    out_pdf = os.path.join(d, stem + '.pdf')
+    out_docx = os.path.join(docx_dir, stem + '.docx')
+    out_pdf = os.path.join(pdf_dir, stem + '.pdf')
     shutil.copy2(tmp_docx, out_docx)
     shutil.copy2(tmp_pdf, out_pdf)
     print(f'\n产出：\n  {out_docx}\n  {out_pdf}')
