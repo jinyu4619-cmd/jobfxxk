@@ -67,6 +67,11 @@ def check_resume():
         elif not path.lower().endswith(ext):
             issues.append(f'{label}不是 {ext} 文件')
     if not issues:
+        # Word 比 PDF 新，说明改了 docx 但没重新导出 PDF。
+        # 这种状态下锚点表量的是旧版面，版式比对也在拿新产出比旧母版，结论会是假的。
+        if (os.path.getmtime(docx) - os.path.getmtime(pdf)) > 60:
+            issues.append('Word 比 PDF 新——你改了 docx 但没重新导出 PDF。'
+                          '先用 Word 把这份 docx 另存为 PDF 覆盖掉旧的，再重跑 make_anchors。')
         from pypdf import PdfReader
         try:
             n = len(PdfReader(pdf).pages)
