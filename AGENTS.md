@@ -47,7 +47,7 @@ python scripts/setup.py --check
 | 阶段 | 干什么 | 脚本 |
 |---|---|---|
 | 0 | 启动检查、断点恢复 | `setup.py --check` |
-| 1 | 把简历读成文本、逐段展示确认 | `read_resume.py`、`profile.py exp *` |
+| 1 | 把简历读成文本、按板块一次核对 | `read_resume.py`、`profile.py exp attach-raw`、`profile.py exp review`（贴原文，别逐条问） |
 | 2 | 建个人信息库（只问缺的） | `profile.py missing / set / mode / review` |
 | 2.5 | 问意向：开放地问「想投什么」，同时列出经历推出来的 3–4 个方向 | `directions.py` |
 | 3 | 定模板、标定行宽 | `make_anchors.py`、`compose.py` |

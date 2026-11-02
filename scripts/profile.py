@@ -16,7 +16,7 @@
 
 **中文一律走 --file，不要用管道。** Windows 下 `echo '{...}' | python` 会把中文转成 `?????`。
 """
-import io, json, os, sys
+import io, json, os, re, subprocess, sys
 from contextlib import redirect_stdout
 from datetime import datetime
 sys.stdout.reconfigure(encoding='utf-8')
@@ -370,12 +370,256 @@ def cmd_exp_confirm(argv):
     print(f'{eid} 已确认，记进 confirm-log。')
 
 
+def cmd_exp_attach_raw(argv):
+    """把简历里的原文段落挂到每条经历上
+
+    为什么要挂原文：结构化的 bullets 是拆过的（动作/方法/结果），拆的过程一定会丢东西——
+    实测丢过「负责场地联系、流程设计、文案打磨、视觉宣发」这半句。
+    复核的意义是对着简历看，展示重组后的句子等于让用户核对一个他没见过的东西。
+
+    用法：exp attach-raw --file <简历.docx|pdf>
+    """
+    path = ''
+    for a in argv:
+        if a.startswith('--file='):
+            path = a[7:]
+        elif argv.index(a) > 0 and argv[argv.index(a) - 1] == '--file':
+            path = a
+    if not path:
+        sys.exit('用法：exp attach-raw --file <简历路径>')
+    if not os.path.exists(path):
+        sys.exit('找不到这个文件：' + path)
+
+    r = subprocess.run([sys.executable, os.path.join(HERE, 'read_resume.py'), path, '--json'],
+                       capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=120)
+    try:
+        lines = json.loads(r.stdout).get('lines') or []
+    except ValueError:
+        sys.exit('读简历失败：' + ((r.stderr or r.stdout)[:200]))
+    if not lines:
+        sys.exit('简历里没读到文字。')
+
+    def key(org):
+        # 「某某科技（深圳）」→「某某科技」；括号里的城市不参与匹配
+        s = re.split(r'[（(]', org or '')[0]
+        return s.strip()[:6]
+
+    exps = load(EXP, [])
+    prof = load(PROFILE, {})
+    hooked = 0
+    for e in exps:
+        k = key(e.get('org'))
+        if not k:
+            continue
+        idx = next((i for i, l in enumerate(lines) if k in l), None)
+        if idx is None:
+            continue
+        block = [lines[idx].strip()]
+        for j in range(idx + 1, min(idx + 8, len(lines))):
+            nxt = lines[j].strip()
+            if not nxt:
+                continue
+            # 撞到下一家公司的抬头就停
+            if any(key(o.get('org')) and key(o.get('org')) in nxt for o in exps
+                   if o is not e and o.get('org')):
+                break
+            # 撞到板块标题就停（简历里的「项目经历」「实习经历」这些小标题）
+            if re.fullmatch(r'(教育背景|实习经历|项目经历|校园经历|获奖|荣誉|证书|技能|个人总结|自我评价)[:：]?', nxt):
+                break
+            # 撞到另一条经历的抬头就停：一行里同时有名字和时间区间
+            if re.search(r'20\d{2}[.\-/]\d{2}\s*[-—–]\s*(20\d{2}[.\-/]\d{2}|至今)', nxt):
+                break
+            block.append(nxt)
+        # Word 里一条 bullet 常被拆成两段（「…输出」/「投放策略并被采纳…」），
+        # 前一段很短又没有句末标点时并回去，展示出来才像人话
+        merged = []
+        for line in block:
+            if merged and len(merged[-1]) < 25 and not re.search(r'[。！？；：」）)]$', merged[-1]):
+                merged[-1] += line
+            else:
+                merged.append(line)
+        e['raw'] = merged
+        hooked += 1
+
+    save(EXP, exps)
+    print('挂了 %d 条原文（共 %d 条经历）' % (hooked, len(exps)))
+    for e in exps:
+        n = len(e.get('raw') or [])
+        print('  %s %s：%s' % (e.get('id'), e.get('org'), ('%d 段原文' % n) if n else '没匹配到'))
+
+    # 简历里有、信息库里没有的条目——别装作列全了
+    head_re = re.compile(r'20\d{2}[.\-/]\d{2}\s*[-—–]\s*(20\d{2}[.\-/]\d{2}|至今)')
+    heads = [l.strip() for l in lines if head_re.search(l)]
+    known = [key(e.get('org')) for e in exps if e.get('org')]
+    # 教育经历在 profile.json 里，不算「没进信息库」
+    schools = [((prof.get('edu') or {}).get(k) or {}).get('school') or ''
+               for k in ('master', 'bachelor')]
+    missing = [h for h in heads
+               if not any(k and k in h for k in known)
+               and not any(s and s in h for s in schools)]
+    if missing:
+        print('\n简历里还有这些像是经历的条目，信息库里没有：')
+        for h in missing[:8]:
+            print('  · ' + h[:80])
+        print('要我补进去的话，告诉我它们属于哪一类（实习 / 项目 / 获奖）。')
+
+
+def cmd_exp_review(argv):
+    """按板块一次列全所有经历，让用户对着简历扫一遍，一次确认
+
+    为什么不再逐条问：一段一段确认，用户要点七八次、翻上翻下对，
+    而他真正要做的事只有一件——看「这跟我简历上的一样吗」。
+    一次列全，他一眼扫完就能答。
+
+    展示的文字由脚本拼，模型只负责贴出去：模型复述会压缩、合并、改写，
+    一旦改写，用户核对的对象就不是自己简历了。
+    """
+    exps = load(EXP, [])
+    prof = load(PROFILE, {})
+
+    def val(*path):
+        cur = prof
+        for k in path:
+            cur = (cur or {}).get(k) if isinstance(cur, dict) else None
+        return cur or ''
+
+    out = ['══════ 请对照你的简历核对下面全部内容 ══════', '']
+
+    # 一、个人信息
+    out.append('【一、个人信息】')
+    line = '姓名 %s｜手机 %s｜邮箱 %s' % (val('basic', 'name') or '（缺）',
+                                        val('basic', 'phone') or '（缺）',
+                                        val('basic', 'email') or '（缺）')
+    out.append('  ' + line)
+    if prof.get('intent', {}).get('jobs'):
+        out.append('  求职意向：%s｜城市：%s｜到岗：%s' % (
+            val('intent', 'jobs'), val('intent', 'cities') or '不限', val('intent', 'available') or '—'))
+    out.append('')
+
+    # 二、教育背景
+    out.append('【二、教育背景】')
+    for k, label in (('master', '硕士'), ('bachelor', '本科')):
+        e = (prof.get('edu') or {}).get(k) or {}
+        if e:
+            out.append('  %s：%s %s %s %s—%s' % (
+                label, e.get('school', ''), e.get('major', ''), e.get('degree', ''),
+                e.get('start', ''), e.get('grad', '')))
+    out.append('')
+
+    # 三、四、五：按类型分板块
+    groups = [('internship', '实习经历'), ('project', '项目 / 比赛'), ('campus', '校园经历')]
+    nums_all = []
+    for typ, title in groups:
+        items = [e for e in exps if e.get('type') == typ]
+        if not items:
+            continue
+        out.append('【%s（%d 段）】' % (title, len(items)))
+        for i, e in enumerate(items, 1):
+            out.append('  %d. %s｜%s｜%s—%s' % (
+                i, e.get('org') or '（未写）', e.get('role') or '（未写）',
+                e.get('start') or '?', e.get('end') or '?'))
+            raw = e.get('raw') or []
+            if raw:
+                # 有原文就贴原文——这才是用户要核对的「我简历上怎么写的」
+                for line in raw[1:]:
+                    out.append('     ' + line)
+            else:
+                for b in (e.get('bullets') or []):
+                    parts = [x for x in (b.get('action'), b.get('method'), b.get('result')) if x]
+                    if parts:
+                        out.append('     · %s：%s' % (b.get('theme') or '—', '；'.join(parts)))
+                out.append('     （这是拆过的摘要，不是原文。要贴原文先跑 exp attach-raw --file 简历路径）')
+            n = e.get('metrics_all') or []
+            if n:
+                out.append('     数字：' + '、'.join(n))
+                nums_all += n
+            out.append('')
+
+    # 获奖 / 证书：信息库里可能一条都没有，如实说，别装作列全了
+    awards = [e for e in exps if e.get('type') == 'award']
+    out.append('【获奖 / 证书（%d 条）】' % len(awards))
+    if awards:
+        for i, a in enumerate(awards, 1):
+            out.append('  %d. %s｜%s' % (i, a.get('org') or '', a.get('role') or ''))
+        out.append('')
+    else:
+        out.append('  信息库里还没有获奖记录——简历上如果有奖学金、竞赛名次，告诉我，我补进来。')
+        out.append('')
+    out.append('')
+
+    if nums_all:
+        out.append('全部数字（共 %d 个）：%s' % (len(nums_all), '、'.join(nums_all)))
+    else:
+        out.append('以上没有数字。')
+    out.append('')
+    out.append('这些文字和数字，跟你简历上的完全一致吗？')
+    out.append('有问题直接说哪里不对（比如「第 2 段的结束时间错了」）；没问题回「没问题」，我一次全部确认。')
+
+    if '--confirm-all' in argv:
+        now = datetime.now()
+        stamp = now.astimezone().isoformat(timespec='seconds')
+        n = 0
+        for e in exps:
+            if e.get('status') == 'confirmed':
+                continue
+            e['status'] = 'confirmed'
+            e['confirmed_at'] = stamp
+            n += 1
+            line = ('- %s 确认 %s · %s %s｜数字：%s\n' % (
+                now.strftime('%Y-%m-%d %H:%M'), e.get('id'), e.get('org', ''),
+                e.get('role', ''), '、'.join(e.get('metrics_all') or []) or '无'))
+            if not os.path.exists(LOG):
+                io.open(LOG, 'w', encoding='utf-8').write('# 确认记录\n\n')
+            io.open(LOG, 'a', encoding='utf-8').write(line)
+        if n:
+            save(EXP, exps)
+        out.append('')
+        out.append('（已一次性确认 %d 段，记进 confirm-log）' % n)
+
+    print('\n'.join(out))
+
+
+def render_exp(e, index, total):
+    """把一条经历渲染成「可以原样贴给用户看」的文本
+
+    为什么由脚本渲染而不是让模型复述：模型会不自觉地压缩、合并、改写。
+    实测过一次，它把两条 bullet 并成一句，还删掉了「多渠道精准触达」这层方法。
+    用户核对的是「这跟我简历上写的一样吗」，一旦经过模型改写，核对就失去意义了。
+    """
+    lines = ['第 %d 条 / 共 %d 条：%s' % (index, total, e.get('role') or '（未写岗位）'), '']
+    lines.append('- 公司：' + (e.get('org') or '（未写）'))
+    lines.append('- 岗位：%s；简历里列在「%s」栏目' % (
+        e.get('role') or '（未写）', '实习经历' if e.get('type') == 'internship' else
+        ('项目经历' if e.get('type') == 'project' else '校园经历')))
+    lines.append('- 时间：%s—%s' % (e.get('start') or '?', e.get('end') or '?'))
+    lines.append('')
+    for b in (e.get('bullets') or []):
+        lines.append('· ' + (b.get('theme') or '（未命名）'))
+        if b.get('action'):
+            lines.append('  做了什么：' + b['action'])
+        if b.get('method'):
+            lines.append('  怎么做的：' + b['method'])
+        if b.get('result'):
+            lines.append('  结果：' + b['result'])
+        lines.append('')
+    nums = e.get('metrics_all') or []
+    if nums:
+        lines.append('请逐个数核对：' + '、'.join(nums))
+    else:
+        lines.append('这条没有数字。')
+    lines.append('')
+    lines.append('上面的文字和数字，跟你简历上的完全一致吗？')
+    return '\n'.join(lines)
+
+
 def cmd_exp_next(argv):
     """确认上一段 + 直接给下一段，一次调用走完一个来回
 
     用法：exp next [--confirm exp_001 --metrics "80%,95%"]
+          exp next --render      # 直接输出可以原样贴给用户的文本
     没有 --confirm 就只是取下一段。
     """
+    render = '--render' in argv
     if '--confirm' in argv:
         i = argv.index('--confirm')
         if i + 1 < len(argv):
@@ -388,9 +632,13 @@ def cmd_exp_next(argv):
     todo = [e for e in exps if e.get('status') != 'confirmed']
     done = len(exps) - len(todo)
     if not todo:
-        print(json.dumps({'done': True, 'total': len(exps)}, ensure_ascii=False))
+        print('全部 %d 条都确认过了。' % len(exps) if render
+              else json.dumps({'done': True, 'total': len(exps)}, ensure_ascii=False))
         return
     e = todo[0]
+    if render:
+        print(render_exp(e, done + 1, len(exps)))
+        return
     out = dict(e)
     out.update({'index': done + 1, 'total': len(exps), 'done': False})
     print(json.dumps(out, ensure_ascii=False, indent=1))
@@ -439,6 +687,10 @@ def main():
             return cmd_exp_confirm(argv)
         if sub == 'next':
             return cmd_exp_next(argv[2:])
+        if sub == 'review':
+            return cmd_exp_review(argv[2:])
+        if sub == 'attach-raw':
+            return cmd_exp_attach_raw(argv[2:])
     sys.exit(__doc__)
 
 
