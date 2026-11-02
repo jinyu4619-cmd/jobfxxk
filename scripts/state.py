@@ -103,6 +103,8 @@ def main():
     ap.add_argument('--company')
     ap.add_argument('--position')
     ap.add_argument('--resume', dest='resume_version')
+    ap.add_argument('--login', choices=['done', 'pending', 'failed'],
+                    help='这条线的登录状态：用户登录完回你之后再记 done')
     ap.add_argument('--todo', help='逗号分隔的待办')
     ap.add_argument('--add')
     ap.add_argument('--done', help='从待办里划掉某项')
@@ -131,9 +133,11 @@ def main():
         print('共 %d 条线：' % len(jobs))
         for i, j in enumerate(jobs, 1):
             todo = ('｜待办 ' + '、'.join(j.get('todo') or [])) if j.get('todo') else ''
-            print('  %d. %s｜%s  →  %s%s' % (
+            login = {'done': '｜已登录', 'pending': '｜待登录', 'failed': '｜登录失败'}.get(
+                j.get('login'), '')
+            print('  %d. %s｜%s  →  %s%s%s' % (
                 i, j.get('company') or '（未写公司）', j.get('position') or '（未写岗位）',
-                j.get('phase') or '（未开始）', todo))
+                j.get('phase') or '（未开始）', login, todo))
         return
 
     if a.cmd == 'set':
@@ -144,6 +148,8 @@ def main():
             fields['resume'] = a.resume_version
         if a.todo is not None:
             fields['todo'] = [x.strip() for x in a.todo.split(',') if x.strip()]
+        if a.login:
+            fields['login'] = a.login
 
         company = a.company or (d.get('company') or '')
         position = a.position if a.position is not None else (d.get('position') or '')

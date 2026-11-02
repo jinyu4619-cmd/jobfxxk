@@ -182,9 +182,11 @@ def print_status():
         print('在投的线（%d 条）：' % len(jobs))
         for i, j in enumerate(jobs, 1):
             todo = ('｜待办：' + '、'.join(j['todo'][:3])) if j.get('todo') else ''
-            print('  %d. %s｜%s  →  %s%s' % (
+            login = {'done': '｜已登录', 'pending': '｜待登录', 'failed': '｜登录失败'}.get(
+                j.get('login'), '')
+            print('  %d. %s｜%s  →  %s%s%s' % (
                 i, j.get('company') or '（未写公司）', j.get('position') or '（未写岗位）',
-                j.get('phase') or '（未开始）', todo))
+                j.get('phase') or '（未开始）', login, todo))
 
     print()
     if not st.get('ready'):
