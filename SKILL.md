@@ -397,7 +397,7 @@ python scripts/secure_store.py delete
 
 ### 避免重复追问
 
-填表遇到档案里没有的字段，**先查库**。没有就收集完当场写进去，下次不再问。
+填表遇到档案里没有的字段，**先跑 `fill_plan.py` 一次算全**（见 8.2.5），把缺的一次问完、一次写回。不要一个字段问一轮。
 
 ### 出门前验一次
 
@@ -952,6 +952,38 @@ node scripts/browser.cjs fill  fill.json --page=resume/7683
 [{"label": "获奖时间", "value": "2025-10", "nth": 1}]
 ```
 
+### 8.2.5 先算差异，再一次问完
+
+**填之前先跑这一条**，让它把「哪些能填、哪些要问你」一次算出来：
+
+```bash
+node scripts/browser.cjs dump --page=<地址片段> > dump.json
+python scripts/fill_plan.py dump.json
+```
+
+输出三桶：
+
+- `auto`：信息库里有，直接填。把这个数组原样存成 `fill.json` 交给 `browser.cjs fill`
+- `ask`：库里没有，**必须问你**——输出里的 `hint` 已经把清单拼好了
+- `manual`：需要你点的（自定义下拉、日期区间、单选）
+
+**`ask` 里的东西一次问完，不要一条一条问。** 做一张填空表发过去：
+
+```
+这张表还差几项，一次填完发我：
+紧急联系人：
+到岗时间：
+项目链接：
+```
+
+用户答完，写成 JSON 一次入库，**下次不用再问**：
+
+```bash
+python scripts/profile.py set --file 补充.json
+```
+
+**为什么这步单列**：以前是「填到哪个字段发现没有，就停下来问一次」，一页表单十几个字段能问十几轮，用户被反复打断。真实运行里这一段是最碎、最耗人的。
+
 **关键动作：先读系统默认值。** 很多系统（北森就是）不问附件、直接读账号里存的那份旧简历。把默认值和信息库逐项比对，不一致的列出来告诉用户，按信息库改。
 
 ### 8.3 文字框怎么填
@@ -1176,6 +1208,7 @@ python scripts/verify.py tracker
 | `scripts/recommend.py` | **推荐主入口**：拆到单个岗位、排掉已投、三级命中带依据 |
 | `scripts/gate.py` | 阶段闸门：找岗/微调/填表/记账前各验一遍（填表前会查改动校验记录） |
 | `scripts/fetch_jd.cjs` | 后台读某条岗位的 JD 正文 |
+| `scripts/fill_plan.py` | 填表前算差异：哪些能自动填、哪些库里没有要问用户 |
 | `scripts/apply.cjs` | **投递入口**：打开岗位→点投递→等登录→传简历→等解析→空字段体检，一条命令走完 |
 | `scripts/browser.cjs` | 浏览器操作：launch / dump / fill / pick / upload / text / shot / pages / close（页内逻辑在 `page_ops.cjs`，自定义下拉在 `pick_logic.cjs`） |
 | `scripts/fill_engine.py` | 三道关（窗口 / 事实 / 说法）+ Word 替换 + 版面复验 |

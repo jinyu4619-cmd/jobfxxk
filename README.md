@@ -245,6 +245,7 @@ jobfxxk/
 | `recommend.py` | 推荐岗位：拆到单个岗位、排已投、带依据 |
 | `gate.py` | 阶段闸门：进关键阶段前验一遍，不通过就拦 |
 | `fetch_jd.cjs` | 后台读 JD |
+| `fill_plan.py` | 填表前算差异：哪些能自动填、哪些库里没有要问用户 |
 | `apply.cjs` | 投递入口：打开岗位→点投递→等登录→传简历→等解析→空字段体检 |
 | `browser.cjs` | 浏览器：launch / pages / dump / fill / pick / upload / text / shot / close（页内逻辑在 `page_ops.cjs`） |
 | `fill_engine.py` | 三道关（字数窗口 / 事实 / 说法）+ Word 替换 + 版面复验 |
