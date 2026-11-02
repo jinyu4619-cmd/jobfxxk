@@ -146,6 +146,19 @@ python scripts/state.py set --phase "阶段 8 · 填表中" --company 某公司 
 
 每进入一个新阶段就更新一次 `phase`，这样中途断线也能接上。
 
+### 进这四个阶段之前，先过闸门
+
+```bash
+python scripts/gate.py 4                                  # 找岗前
+python scripts/gate.py 6                                  # 微调前
+python scripts/gate.py 8 --version "公司 岗位"             # 填表前
+python scripts/gate.py 10                                 # 记账前
+```
+
+返回 `ok: false` 就**停下来**，把 `fix` 念给用户，修完再进。不要凭印象觉得「应该没问题」——我真实踩过：没跑微调就去填表、上传简历后字段被清空没发现、连点五次卡片开出五个标签页。这些文档写十条也拦不住，只能让脚本拦。
+
+`ok: true` 才继续，然后把这一步记进 state。
+
 ---
 
 ## 阶段 1 · 收经历，逐条核对
@@ -473,6 +486,8 @@ python scripts/compose.py --draft 填充稿.json
 
 ## 阶段 4 · 找岗
 
+**进门先过闸门**：`python scripts/gate.py 4`，不通过就停。
+
 **先问两个问题**：想投哪类岗位？这次想让我推几个？（默认 6 家）
 
 **各种来源怎么接**：
@@ -560,6 +575,8 @@ node scripts/fetch_jd.cjs "岗位详情页链接"
 ---
 
 ## 阶段 6 · 微调简历
+
+**进门先过闸门**：`python scripts/gate.py 6`，不通过就停。
 
 **前提：同骨架、措辞可变。** 不增删条目、不改变经历的段数，只改措辞和重点。
 
@@ -679,6 +696,9 @@ node scripts/browser.cjs launch "<岗位地址>"
 
 ## 阶段 8 · 上传 + 填表
 
+**进门先过闸门**：`python scripts/gate.py 8 --version "公司 岗位"`，不通过就停——
+它会确认这一版的 docx、pdf 都在，而且版式验收过了。没跑微调就来填表，这一步会被拦住。
+
 昨天在 Babycare 上跑通的协作方式，原样复用。
 
 ### 8.1 顺序：先进岗位入口，再传简历，最后填字
@@ -774,6 +794,8 @@ node scripts/browser.cjs shot now.png
 ---
 
 ## 阶段 10 · 同步进度
+
+**进门先过闸门**：`python scripts/gate.py 10`，不通过就停。
 
 用户点完之后，**只交付两样**：
 
@@ -873,6 +895,7 @@ python scripts/verify.py tracker
 | `scripts/translate_jobs.py` | 把岗位库里的选项 ID 翻成中文 |
 | `scripts/filter_jobs.py` | 粗筛：按届次/学历/城市关键词过一遍，看整体盘子 |
 | `scripts/recommend.py` | **推荐主入口**：拆到单个岗位、排掉已投、三级命中带依据 |
+| `scripts/gate.py` | 阶段闸门：找岗/微调/填表/记账前各验一遍 |
 | `scripts/fetch_jd.cjs` | 后台读某条岗位的 JD 正文 |
 | `scripts/browser.cjs` | 浏览器操作：launch / dump / fill / upload / text / shot / pages / close |
 | `scripts/fill_engine.py` | 窗口校验 + Word 替换 + 版面复验 |
