@@ -43,7 +43,9 @@ Claude Code 放进 `~/.claude/skills/jobfxxk` 就会自动加载。Codex 不需�
 
 ### 方式三：只用脚本
 
-把仓库解压到任意目录，直接跑 `python scripts/setup.py --check`，不需要装成 skill。
+把仓库解压到任意目录，直接跑 `setup.cmd --check`，不需要装成 skill。
+
+**Windows 上请用 `setup.cmd`，不要直接敲 `python scripts/setup.py`。** 微软商店那个 `python` 是空壳程序（执行会返回 9009），`py` 启动器也可能没装。`setup.cmd` 会按顺序找能用的解释器（`python` → `py -3` → `python3` → 常见安装路径），找不到就明确告诉你缺什么、去哪儿装。
 
 ### 需要什么
 

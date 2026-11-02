@@ -86,7 +86,8 @@ def pii_scan(files):
     return problems[:12]
 
 INCLUDE_DIRS = ['scripts', 'references', 'assets']
-INCLUDE_FILES = ['SKILL.md', 'AGENTS.md', 'README.md', 'LICENSE', 'config.example.json', 'package.json']
+INCLUDE_FILES = ['SKILL.md', 'AGENTS.md', 'README.md', 'LICENSE', 'config.example.json',
+                 'package.json', 'setup.cmd']
 SKIP_DIRS = {'__pycache__', 'node_modules', '.git', 'data', 'user', 'dist', 'docs',
              'browser-profile', '待排版', '微调版'}
 SKIP_FILES = {'config.json', '.DS_Store', 'Thumbs.db'}
@@ -117,7 +118,7 @@ def check(files):
         problems.append('根目录没有 SKILL.md，Claude 端装不成技能')
     if 'AGENTS.md' not in files:
         problems.append('根目录没有 AGENTS.md，Codex 端没有入口')
-    need = ['scripts/setup.py', 'scripts/profile.py', 'scripts/read_resume.py',
+    need = ['setup.cmd', 'scripts/setup.py', 'scripts/profile.py', 'scripts/read_resume.py',
             'scripts/compose.py', 'scripts/verify.py', 'scripts/fill_engine.py',
             'scripts/lint_draft.py', 'scripts/gate.py',
             'scripts/directions.py', 'scripts/recommend.py',

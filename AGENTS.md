@@ -13,8 +13,12 @@
 用户说「开始」「帮我投简历」「继续」时：
 
 ```bash
-python scripts/setup.py --check
+setup.cmd --check
 ```
+
+**Windows 上永远用 `setup.cmd`，不要直接敲 `python scripts/setup.py`。** 微软商店那个 `python` 是空壳（执行返回 9009），`py` 启动器也可能没装；`setup.cmd` 会自己找能用的解释器，找不到就说人话。
+
+它第一行打印找到的解释器（`[jobfxxk] python: D:\python.exe`），**后面所有 python 命令都用这个路径**。
 
 返回一段 JSON。**照它说的做，不要自己判断环境**：
 
@@ -46,7 +50,7 @@ python scripts/setup.py --check
 
 | 阶段 | 干什么 | 脚本 |
 |---|---|---|
-| 0 | 启动检查、断点恢复 | `setup.py --check` |
+| 0 | 启动检查、断点恢复 | `setup.cmd --check`（Windows 上用它，别直接敲 `python`） |
 | 1 | 把简历读成文本、按板块一次核对 | `read_resume.py`、`profile.py exp attach-raw`、`profile.py exp review`（贴原文，别逐条问） |
 | 2 | 建个人信息库（只问缺的） | `profile.py missing / set / mode / review` |
 | 2.5 | 问意图：**有目标就直接投，没有才筛选**（筛选要先说明耗时） | 按钮两选一；有目标时跳过阶段 4 |

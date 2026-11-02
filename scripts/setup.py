@@ -414,8 +414,14 @@ def act_install_deps(_):
         os.makedirs(deps, exist_ok=True)
         print(f'正在装 Playwright 到 {deps} …')
         npm = shutil.which('npm') or r'D:\nodejs\npm.cmd'
+        # 只装库，不下载浏览器：我们用 connectOverCDP 连用户自己装的 Edge/Chrome，
+        # 自带那套 Chromium + Firefox + WebKit 有 200MB 上下，装完一次都不会用。
+        # 实测这一步原来是安装耗时的大头（约两分钟，绝大多数花在下载浏览器）。
+        env = dict(os.environ)
+        env['PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD'] = '1'
         r = subprocess.run([npm, 'install', 'playwright', '--prefix', deps],
-                           capture_output=True, text=True, shell=(os.name == 'nt'), timeout=900)
+                           capture_output=True, text=True, shell=(os.name == 'nt'),
+                           timeout=900, env=env)
         if r.returncode != 0:
             sys.exit('npm install 失败：' + ((r.stderr or r.stdout or '')[-300:]))
         print('  完成')
