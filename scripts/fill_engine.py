@@ -119,10 +119,11 @@ def ps_escape(s):
             .replace('\r', ' ').replace('\n', ' '))
 
 
-def apply_with_word(docx, pdf, pairs):
-    """Word COM 逐对替换（含文本框），然后导出 PDF
+def export_pdf(docx, pdf):
+    """Word COM 只做一件事：把 docx 导出成 PDF
 
-    只操作自己打开的那个 Word 实例，结束时在 finally 里 Quit。
+    替换已经在 XML 层做完了（见 docx_fill.py）。这里不碰正文，所以不会破坏格式。
+    只操作自己打开的那个 Word 实例，结束时在 finally 里 Quit；
     绝不按进程名批量杀 WORD——用户可能开着没保存的文档。
     """
     ps = ['''
@@ -133,22 +134,6 @@ try {
   $w.Visible = $false
   $w.DisplayAlerts = 0
   $d = $w.Documents.Open("%s")
-''' % ps_escape(docx)]
-    for old, new in pairs:
-        ps.append('''
-  foreach ($story in $d.StoryRanges) {
-    $r = $story
-    do {
-      $f = $r.Find
-      $f.ClearFormatting(); $f.Replacement.ClearFormatting()
-      $f.Forward = $true; $f.Wrap = 0; $f.Format = $false
-      $null = $f.Execute("%s", $false, $false, $false, $false, $false, $true, 0, $false, "%s", 2)
-      $r = $r.NextStoryRange
-    } while ($r -ne $null)
-  }
-''' % (ps_escape(old), ps_escape(new)))
-    ps.append('''
-  $d.Save()
   $d.ExportAsFixedFormat("%s", 17)
   $pages = $d.ComputeStatistics(2)
   Write-Output "PAGES=$pages"
@@ -160,10 +145,10 @@ finally {
   if ($d -ne $null) { try { $d.Close(0) } catch {} }
   if ($w -ne $null) { try { $w.Quit() } catch {} }
 }
-''' % ps_escape(pdf))
+''' % (ps_escape(docx), ps_escape(pdf))]
 
     os.makedirs(TMP, exist_ok=True)
-    f = os.path.join(TMP, '_apply.ps1')
+    f = os.path.join(TMP, '_export.ps1')
     open(f, 'w', encoding='utf-8-sig').write('\n'.join(ps))
     try:
         r = subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', f],
@@ -303,7 +288,19 @@ def main():
         print('  以下片段在 docx 里找不到对应的文字，多半跨了段落：')
         for e in unresolved:
             print('    · ' + e['old'][:30])
-    log = apply_with_word(tmp_docx, tmp_pdf, pairs).strip()
+    # 先在 XML 层替换：保住粗体/字号，顺手把成果数据加粗。
+    # 不用 Word 的查找替换——它会把整段并成一个 run，跨界就整段变粗。
+    import docx_fill
+    tmp_out = os.path.join(TMP, 'work_filled.docx')
+    n_ok, failed = docx_fill.replace_in_document(tmp_docx, tmp_out, pairs)
+    if n_ok:
+        shutil.move(tmp_out, tmp_docx)
+    for reason, frag in failed:
+        print(f'  ✗ {reason}：{frag}…')
+    print(f'  写入 {n_ok} 条')
+
+    # Word 只负责导出 PDF
+    log = export_pdf(tmp_docx, tmp_pdf).strip()
     for line in log.splitlines():
         if line.strip():
             print('  ' + line.strip())
@@ -334,8 +331,11 @@ def main():
     print(f'  末行 y {a["bottom"]:.0f} → {b["bottom"]:.0f}')
     print(f'  行数   {a["lines"]} → {b["lines"]}')
     same = (a['pages'] == b['pages'] and abs(a['top'] - b['top']) <= 2
-            and abs(a['bottom'] - b['bottom']) <= 2)
+            and abs(a['bottom'] - b['bottom']) <= 2 and a['lines'] == b['lines'])
     print('  结论：' + ('版式未变 ✓' if same else '版式有位移 ✗'))
+    if a['lines'] != b['lines']:
+        print('  ⚠ 行数变了（%d → %d），说明有段落折行或缩行了——即使其余三项没动，'
+              '也要按「版式动了」处理，回去压字数重做。' % (a['lines'], b['lines']))
 
     docx_dir, pdf_dir = out_dirs()
     os.makedirs(docx_dir, exist_ok=True)

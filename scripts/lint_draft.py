@@ -244,9 +244,13 @@ def lint(edits, allow=()):
             break                 # 一条改动只提醒一次，别刷屏
 
     # --- 全局：改动条数 ---
-    if len(edits) > 5:
-        warnings.append(dict(kind='too_many_edits', token=str(len(edits)),
-                             old='', detail=f'这次改了 {len(edits)} 处，超过 5 处。'
+    # 按「段」算，不按「条」算：为了让格式不被破坏，一次改动常常拆成
+    # 「小标题」「正文」两条分别替换，按条数会误判成改得太多。
+    # 同一处改动如果为了保住格式拆成了多条，用同一个 grp 标记，只算一段
+    paras = {str(e.get('grp') or ('单条%02d' % i)) for i, e in enumerate(edits)}
+    if len(paras) > 5:
+        warnings.append(dict(kind='too_many_edits', token=str(len(paras)),
+                             old='', detail=f'这次改了 {len(paras)} 段，超过 5 段。'
                                            f'改动过多说明底稿选错了，回去重选一版再改。'))
 
     no_why = [str(i) for i, e in enumerate(edits, 1) if not str(e.get('why') or '').strip()]
