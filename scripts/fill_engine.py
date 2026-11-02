@@ -1,8 +1,11 @@
 ﻿# -*- coding: utf-8 -*-
-"""填充引擎：窗口校验 → Word 原地替换 → 导出复验
+"""填充引擎：窗口校验 → 事实与说法校验 → Word 原地替换 → 导出复验
 
-用法: python scripts/fill_engine.py <草稿.json> [--out 版名]
+用法: python scripts/fill_engine.py <草稿.json> [--out 版名] [--allow 词]
 草稿.json: [{"old": "原文片段", "new": "替换后文本", "why": "为什么改"}, ...]
+
+三道关的顺序：字数窗口（本文件） → 数字/日期/奖项是否有出处 → 禁用夸大词（lint_draft.py）。
+三关全过才动 Word，任何一关不过都不产出文件——不生成一版没验过的简历。
 
 产出直接进简历库：docx 进 <resume_dir>/docx/，pdf 进 <resume_dir>/pdf/，文件名带版本名。
 中间文件放数据目录的 tmp/ 里，不落在仓库里，也不落会话临时目录。
@@ -184,10 +187,47 @@ def measure(pdf):
 
 
 def find_draft(argv):
+    """第一个不是选项、也不是选项取值的参数，就是草稿路径"""
+    skip = False
     for a in argv[1:]:
+        if skip:
+            skip = False
+            continue
+        if a in ('--out', '--allow'):
+            skip = True
+            continue
         if not a.startswith('--'):
             return a
     return os.path.join(TMP, 'draft.json')
+
+
+def find_allow(argv):
+    """--allow 可以重复出现，收集它的所有取值"""
+    out = []
+    for i, a in enumerate(argv):
+        if a == '--allow' and i + 1 < len(argv):
+            out.append(argv[i + 1])
+    return out
+
+
+def run_lint(edits, out_name, allow):
+    """把将写入的改动交给 lint_draft.py 过事实关和说法关
+
+    只校验窗口内、确实会被写进简历的那些条目——被窗口拒掉的改动不会落盘，
+    不该拦着整份草稿。
+    """
+    os.makedirs(TMP, exist_ok=True)
+    p = os.path.join(TMP, '_lint_input.json')
+    json.dump(edits, open(p, 'w', encoding='utf-8'), ensure_ascii=False, indent=1)
+    cmd = [sys.executable, os.path.join(HERE, 'lint_draft.py'), p, '--record', out_name]
+    for a in allow:
+        cmd += ['--allow', a]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8',
+                           errors='replace', timeout=120)
+    except subprocess.TimeoutExpired:
+        return '校验超时，已放弃。', False
+    return (r.stdout or '') + (r.stderr or ''), r.returncode == 0
 
 
 def main():
@@ -227,7 +267,17 @@ def main():
                   (f'，窗口 {lo}–{hi}' if lo is not None else '，未匹配到锚点'))
     if not ok_list:
         print('\n没有可写入的条目，退出。')
-        return
+        return 1
+
+    print('\n=== 事实与说法校验 ===')
+    log, passed = run_lint(ok_list, out_name, find_allow(argv))
+    for line in log.splitlines():
+        if line.strip():
+            print('  ' + line.strip())
+    if not passed:
+        print('\n校验没过，没有写出任何文件。改草稿重跑；两次都过不了就换回原版，'
+              '并告诉用户这条改不好。')
+        return 1
 
     os.makedirs(TMP, exist_ok=True)
     tmp_docx = os.path.join(TMP, 'work.docx')
@@ -260,10 +310,10 @@ def main():
 
     if 'ERROR=' in log:
         print('\n导出失败。最常见的原因是没装 Word，或者 Word 的 COM 被系统策略禁用了。')
-        return
+        return 1
     if not os.path.exists(tmp_pdf):
         print('  ✗ 未生成 PDF。检查是不是没装 Word，或 Word 弹出了对话框。')
-        return
+        return 1
 
     txt = ''.join((pg.extract_text() or '') for pg in PdfReader(tmp_pdf).pages)
     txt = ''.join(txt.split())
@@ -297,7 +347,8 @@ def main():
     shutil.copy2(tmp_docx, out_docx)
     shutil.copy2(tmp_pdf, out_pdf)
     print(f'\n产出：\n  {out_docx}\n  {out_pdf}')
+    return 0
 
 
 if __name__ == '__main__':
-    main()
+    sys.exit(main())

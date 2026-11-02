@@ -39,6 +39,12 @@ def check(name, ok, detail='', fix=''):
     return dict(name=name, ok=bool(ok), detail=detail, fix=fix if not ok else '')
 
 
+def safe_name(version):
+    """和 lint_draft.py 用同一套文件名规则，否则两边对不上"""
+    import re
+    return re.sub(r'[\\/:*?"<>|\s]+', '_', version).strip('_') or '未命名'
+
+
 # ---------- 阶段 4：找岗前 ----------
 
 def gate4():
@@ -143,6 +149,21 @@ def gate8(version):
         checks.append(check('版式验收通过', v.get('ok'),
                             '；'.join(str(x) for x in v.get('issues', [])[:3]),
                             '版式动了就不能用这版投，回去改字数重新生成，或者换回原版'))
+
+    # 改动校验：这一版生成时，数字/日期/奖项/夸大词是不是都过了关
+    rec_dir = os.path.join(DATA_DIR, 'user', 'lint')
+    rec = os.path.join(rec_dir, safe_name(version) + '.json')
+    ok_lint, detail = False, '这一版没有校验记录，说明它不是走 fill_engine 生成的'
+    if os.path.exists(rec):
+        try:
+            d = json.load(open(rec, encoding='utf-8-sig'))
+            ok_lint = bool(d.get('ok'))
+            detail = f'{d.get("edits")} 条改动，拦住 {d.get("blocked")} 条，{d.get("at", "")}'
+        except Exception as ex:
+            detail = '记录读不了：' + str(ex)[:60]
+    checks.append(check('改动校验通过', ok_lint, detail,
+                        f'重跑 fill_engine（它自己会校验）：'
+                        f'python scripts/fill_engine.py 草稿.json --out "{version}"'))
     return checks
 
 

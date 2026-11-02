@@ -50,6 +50,7 @@ def check(files):
         problems.append('根目录没有 AGENTS.md，Codex 端没有入口')
     need = ['scripts/setup.py', 'scripts/profile.py', 'scripts/read_resume.py',
             'scripts/compose.py', 'scripts/verify.py', 'scripts/fill_engine.py',
+            'scripts/lint_draft.py', 'scripts/gate.py',
             'scripts/sync_jobs.cjs', 'scripts/browser.cjs',
             'assets/template/简历模板.docx', 'assets/template/简历模板.pdf']
     for n in need:

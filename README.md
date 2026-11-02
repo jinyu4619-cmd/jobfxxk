@@ -170,7 +170,11 @@ python scripts/make_anchors.py
 python scripts/fill_engine.py draft.json
 ```
 
-引擎会校验字数窗口 → 拒绝超窗条目 → Word 原地替换 → 导出 PDF → 回搜验证替换真的生效 → 复验页数/首行/末行/行数。
+引擎会过三道关 → Word 原地替换 → 导出 PDF → 回搜验证替换真的生效 → 复验页数/首行/末行/行数。
+
+三道关分别是：字数窗口（超窗的不写）、事实（新添的数字/日期/奖项等级必须在你的经历库或母版简历里有出处）、说法（新添的「业内领先」「唯一」这类最高级说法直接拦，「优秀」「显著提升」这类形容词式自评列出来提醒）。三关全过才动 Word，任何一关不过都不产出文件。
+
+被拦了就改草稿重跑，最多两次；两次都过不了就换回原版。确实是你自己要的数字或说法，加 `--allow "23%"` 单独放行，放行的内容会打印出来并记进校验记录。
 
 ### 7. 投递
 
@@ -240,7 +244,8 @@ jobfxxk/
 | `gate.py` | 阶段闸门：进关键阶段前验一遍，不通过就拦 |
 | `fetch_jd.cjs` | 后台读 JD |
 | `browser.cjs` | 浏览器：launch / pages / dump / fill / upload / text / shot / close |
-| `fill_engine.py` | 窗口校验 + Word 替换 + 版面复验 |
+| `fill_engine.py` | 三道关（字数窗口 / 事实 / 说法）+ Word 替换 + 版面复验 |
+| `lint_draft.py` | 改动校验：新添的数字·日期·奖项有没有出处，有没有夸大词 |
 | `compose.py` | 把经历灌进内置模板，产出 docx 进简历库（不导出 PDF） |
 | `write_tracker.py` | 写投递台账、改状态 |
 | `paths.py` | 统一的路径解析 |

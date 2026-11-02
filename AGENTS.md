@@ -53,7 +53,7 @@ python scripts/setup.py --check
 | 3 | 定模板、标定行宽 | `make_anchors.py`、`compose.py` |
 | 4 | 现拉岗位库、筛岗、读 JD | `sync_jobs.cjs`、`translate_jobs.py`、`filter_jobs.py`、`fetch_jd.cjs` |
 | 5 | 定志愿 | 用户定 |
-| 6 | 按 JD 微调简历、复验版式 | `fill_engine.py`、`verify.py layout` |
+| 6 | 按 JD 微调简历、复验版式 | `fill_engine.py`（内含 `lint_draft.py` 的事实关与说法关）、`verify.py layout` |
 | 7 | 开官网、用户登录 | `browser.cjs launch` |
 | 8 | 上传简历、填文字框 | `browser.cjs upload / fill` |
 | 9 | 核对，用户提交 | — |
@@ -122,5 +122,6 @@ jobfxxk-data/       个人数据：配置、锚点表、岗位缓存、加密信
 
 - **中文别走管道**：`echo '{...}' | python` 在 Windows 下会把中文变成 `?????`。一律写成 UTF-8 文件再传 `--file`。
 - **改过 docx 就要重导 PDF**，否则锚点表是旧的。`verify.py resume` 会拦。
+- **简历不许编造**：`fill_engine` 会先过事实关（数字/日期/奖项有没有出处）和说法关（有没有夸大词），三关全过才动 Word。被拦就改草稿，最多重试两次，别加 `--allow` 绕过去——除非用户自己说那个词是他要的。
 - **点开职位会新开标签页**，用 `browser.cjs open <url>` 在同一个标签里导航，`close-tabs` 清理。
 - **上传简历会重置已填字段**，所以先传简历、再填字，填完先点「暂存」。
