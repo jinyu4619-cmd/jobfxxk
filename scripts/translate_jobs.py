@@ -19,14 +19,17 @@ from paths import CFG, DATA_DIR
 CACHE = (CFG.get('job_cache') or os.path.join(DATA_DIR, 'jobs.json')).replace('/', os.sep)
 OPTFILE = os.path.join(DATA_DIR, 'options.json')
 
-# 探针必须落在 scripts/ 下面：Node 的模块解析是从「脚本所在目录」往上找 node_modules，
-# 放 %TEMP% 里永远找不到装在仓库里的 playwright。
-PROBE_PATH = os.path.join(HERE, '_probe_meta.cjs')
+# 探针写到数据目录的 tmp/ 下，不写进 scripts/。
+# 为什么：装成技能后代码在应用托管的目录里，那个目录可能只读，写进去就整个翻译步骤崩掉；
+# 而且万一进程被掐断，残留的 _probe_meta.cjs 会被下次打包收进 .skill。
+# 探针里对 ensure_deps / browser_config 的 require 因此要走绝对路径——Node 的模块解析
+# 是按「脚本所在目录」往上找的，探针挪走了，相对路径就断了。
+PROBE_PATH = os.path.join(DATA_DIR, 'tmp', '_probe_meta.cjs')
 
 PROBE = r'''
-require('./ensure_deps.cjs');
+require('__ENSURE__');
 const { chromium } = require('playwright');
-const { launch } = require('./browser_config.cjs');
+const { launch } = require('__BCFG__');
 const zlib = require('zlib');
 const APP = '__APP__';
 const BASE = '__BASE__';
@@ -89,15 +92,25 @@ def main():
         sys.exit('岗位缓存不存在，先跑 node scripts/sync_jobs.cjs --only=jobs')
 
     src = CFG.get('job_source') or {}
+
+    def js(p):
+        """Windows 路径转成 Node 能吃的写法：正斜杠 + 单引号转义"""
+        return str(p).replace('\\', '/').replace("'", "\\'")
+
     probe = (PROBE
+             .replace('__ENSURE__', js(os.path.join(HERE, 'ensure_deps.cjs')))
+             .replace('__BCFG__', js(os.path.join(HERE, 'browser_config.cjs')))
              .replace('__APP__', src.get('app') or 'OGPubC12daD6HlsNcpwc7mR4nCd')
              .replace('__BASE__', src.get('base') or 'https://acn8c93z7tds.feishu.cn')
              .replace('__TABLE__', src.get('jobs') or 'tblFNPEDJ2kHQGc4')
              .replace('__REF__', src.get('referrals') or 'tblkwb9UTNkcvFpz')
              .replace('__MAJ__', src.get('majors') or 'tblBBEYMOBVzKv8D'))
+    os.makedirs(os.path.dirname(PROBE_PATH), exist_ok=True)
     open(PROBE_PATH, 'w', encoding='utf-8').write(probe)
     env = dict(os.environ)
-    env['NODE_PATH'] = os.path.join(ROOT, 'node_modules')   # 不覆盖成空字符串
+    # 仓库里的 node_modules 和自己装的 deps/ 都塞进 NODE_PATH，探针挪走了也能找到 playwright
+    env['NODE_PATH'] = os.pathsep.join(
+        [os.path.join(ROOT, 'node_modules'), os.path.join(DATA_DIR, 'deps', 'node_modules')])
     try:
         r = subprocess.run([node_bin(), PROBE_PATH], capture_output=True, text=True,
                            encoding='utf-8', errors='replace', env=env,

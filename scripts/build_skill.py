@@ -65,9 +65,13 @@ def check(files):
             problems.append('缺关键文件：' + n)
 
     # 文档里点了名的脚本必须真在仓库里——改过名、删过文件，这一条会先叫
+    docs = ['SKILL.md', 'AGENTS.md', 'README.md']
+    ref_dir = os.path.join(ROOT, 'references')
+    if os.path.isdir(ref_dir):
+        docs += [os.path.join('references', f) for f in sorted(os.listdir(ref_dir))
+                 if f.endswith('.md')]
     try:
-        doc = ''.join(open(os.path.join(ROOT, f), encoding='utf-8').read()
-                      for f in ('SKILL.md', 'AGENTS.md', 'README.md'))
+        doc = ''.join(open(os.path.join(ROOT, f), encoding='utf-8').read() for f in docs)
     except OSError:
         doc = ''
     for m in sorted(set(re.findall(r'scripts/[\w\-]+\.(?:py|cjs)', doc))):
@@ -75,6 +79,31 @@ def check(files):
             continue
         if m not in files:
             problems.append('文档里提到但仓库里没有：' + m)
+
+    # 文档里写的子命令和长参数，脚本里得真有。文档跑在脚本前面，两边会各自漂
+    for m in re.finditer(r'(?:python|node)\s+(scripts/[\w\-]+\.(?:py|cjs))([^\n`]*)', doc):
+        script, rest = m.group(1), m.group(2)
+        if 'xxx' in script or script not in files:
+            continue
+        path = os.path.join(ROOT, script.replace('/', os.sep))
+        if not os.path.exists(path):
+            continue
+        src = open(path, encoding='utf-8-sig', errors='replace').read()
+        toks = set(re.findall(r'(--[A-Za-z][\w\-]*)', src)) | \
+            set(re.findall(r"""['"]([A-Za-z][\w\-]{1,24})['"]""", src))
+        unknown = []
+        for raw in rest.split('#')[0].split():
+            t = raw.strip('"\'`')
+            if not t:
+                continue
+            if t.startswith('--'):
+                if t.split('=')[0] not in toks:
+                    unknown.append(t.split('=')[0])
+            elif not t.startswith('-') and re.fullmatch(r'[a-z][a-z\-]{1,20}', t) \
+                    and t not in toks:
+                unknown.append(t)
+        if unknown:
+            problems.append(f'文档里的命令参数脚本不认：{script} {"、".join(sorted(set(unknown)))}')
 
     bad = [f for f in files if f.endswith('config.json') or '/user/' in f
            or f.startswith('data/') or 'browser-profile' in f]
