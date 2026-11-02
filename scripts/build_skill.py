@@ -116,6 +116,18 @@ def sha1_bytes(b):
     return hashlib.sha1(b).hexdigest()
 
 
+# 文本文件按「统一成 LF」再算哈希。
+# 为什么：Windows 上 core.autocrlf 会把工作区的换行改成 CRLF，git checkout 前后
+# 内容一模一样，哈希却变了——对账会报一堆假漂移，报几次就没人信这个检查了。
+TEXT_EXT = {'.md', '.py', '.cjs', '.json', '.txt', '.yml', '.yaml', '.example'}
+
+
+def digest(name, data):
+    if os.path.splitext(name)[1].lower() in TEXT_EXT:
+        data = data.replace(b'\r\n', b'\n')
+    return sha1_bytes(data)
+
+
 def verify(path):
     """拿包里的内容和仓库当前状态逐文件对账"""
     if not os.path.exists(path):
@@ -123,7 +135,7 @@ def verify(path):
         return 1
     try:
         with zipfile.ZipFile(path) as z:
-            pkg = {n: sha1_bytes(z.read(n)) for n in z.namelist() if not n.endswith('/')}
+            pkg = {n: digest(n, z.read(n)) for n in z.namelist() if not n.endswith('/')}
     except zipfile.BadZipFile:
         print(f'这不是个正常的 .skill（zip）：{path}')
         return 1
@@ -131,7 +143,7 @@ def verify(path):
     repo = {}
     for rel in collect():
         with open(os.path.join(ROOT, rel.replace('/', os.sep)), 'rb') as f:
-            repo[rel] = sha1_bytes(f.read())
+            repo[rel] = digest(rel, f.read())
 
     missing = sorted(set(repo) - set(pkg))      # 仓库有、包里没有
     extra = sorted(set(pkg) - set(repo))        # 包里有、仓库没有
