@@ -150,6 +150,24 @@ setup.cmd --check
 
 `warnings` 不为空时，把它当成一句提醒说出来，别当错误处理、也别重复念叨。
 
+### 可选：配上 Playwright MCP
+
+状态机还会返回一个 `suggestions` 数组，**不阻塞**，`ready: true` 时可能非空。目前只有一条：
+
+```bash
+python scripts/setup_mcp.py --check     # 看配没配
+python scripts/setup_mcp.py --apply     # 装包 + 写进 Claude 桌面版配置（自动备份）
+python scripts/setup_mcp.py --undo      # 撤销
+```
+
+**为什么值得配**：不配的话填表只能靠截图算坐标点页面。遇到自定义下拉、虚拟滚动列表这类控件——比如 51job 简历页那个 288px 高、`overflow:hidden`、选项全画在可视区外的省市级联——坐标点上去等于点空，一个字段能卡好几分钟。配了之后走无障碍树，拿到的是元素引用，点的是元素本身，还能用 `browser_select_option` 按选项文本直接选。
+
+**怎么问**：只问一次，用按钮——「配一个？」/「先不用」。用户不配也完全能跑，别反复提。配完必须提醒：**完全退出 Claude 桌面版再打开**（托盘图标右键退出，不是只关窗口），新会话里才有 `browser_*` 工具。
+
+**安全约定**（脚本已实现，别绕过）：改配置前备份成 `<原文件>.bak-<时间戳>`；只增删 `mcpServers.playwright` 一条，其他条目一个字节不动；写完回读校验，原有条目丢了就报错并打出备份路径。
+
+**前提**：它连的是 `--remote-debugging-port=9222` 的 Edge，`scripts/browser.cjs` 拉起来的就是这个端口。Edge 没起来时 `browser_*` 会失败，但服务本身照常启动，不影响其它步骤。
+
 ### 简历的两个版本（硬性要求）
 
 **要求用户同时提供 docx 和 pdf，不是二选一**：

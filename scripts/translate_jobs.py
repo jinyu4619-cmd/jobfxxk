@@ -83,8 +83,8 @@ const TABLE = '__TABLE__';
 
 
 def node_bin():
-    from shutil import which
-    return which('node') or r'D:\nodejs\node.exe'
+    from nodebin import node_bin as probe
+    return probe()
 
 
 def main():

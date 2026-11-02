@@ -123,6 +123,7 @@ def check(files):
             'scripts/lint_draft.py', 'scripts/gate.py',
             'scripts/directions.py', 'scripts/recommend.py',
             'scripts/sync_jobs.cjs', 'scripts/browser.cjs',
+            'scripts/nodebin.py', 'scripts/setup_mcp.py',
             'assets/template/简历模板.docx', 'assets/template/简历模板.pdf']
     for n in need:
         if n not in files:

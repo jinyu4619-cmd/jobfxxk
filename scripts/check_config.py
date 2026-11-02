@@ -15,6 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 from paths import CONFIG_PATH, DATA_DIR, REPO
+from nodebin import node_bin as _probe_node
 
 CFG_PATH = CONFIG_PATH or os.path.join(DATA_DIR, 'config.json')
 EXAMPLE = os.path.join(REPO, 'config.example.json')
@@ -110,7 +111,7 @@ def check_config():
 
 
 def node_bin():
-    return shutil.which('node') or r'D:\nodejs\node.exe'
+    return _probe_node()
 
 
 def check_env():

@@ -29,6 +29,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 from paths import CONFIG_PATH, DATA_DIR, REPO
+from nodebin import node_bin as _probe_node, npm_bin as _probe_npm
 
 TEMPLATE_DOCX = os.path.join(REPO, 'assets', 'template', '简历模板.docx')
 TEMPLATE_PDF = os.path.join(REPO, 'assets', 'template', '简历模板.pdf')
@@ -57,7 +58,23 @@ def out(payload):
 
 
 def node_bin():
-    return shutil.which('node') or (r'D:\nodejs\node.exe' if os.name == 'nt' else None)
+    return _probe_node()
+
+
+def _mcp_configured():
+    """可选步骤：Playwright MCP 接没接上。只读配置，不跑 npm，不阻塞状态机。
+
+    返回 True / False / None（探测失败，当作不知道）
+    """
+    try:
+        import setup_mcp
+        path, _ = setup_mcp.pick_config()
+        if not path or not os.path.isfile(path):
+            return False
+        cfg = setup_mcp.read_cfg(path)
+        return setup_mcp.ENTRY in (cfg.get('mcpServers') or {})
+    except Exception:
+        return None
 
 
 def p(v):
@@ -336,9 +353,21 @@ def _build_state():
                     done=done, missing=missing,
                     data_dir=DATA_DIR, config_path=CFG_PATH)
 
+    suggestions = []
+    if _mcp_configured() is False:
+        suggestions.append(dict(
+            id='apply_mcp',
+            label='配上 Playwright MCP',
+            why='不配也能用，但遇到自定义下拉、虚拟滚动列表这类控件，'
+                '只能靠坐标点，容易点空、一个字段卡几分钟。配了之后走无障碍树，'
+                '按元素引用点。可随时补。',
+            cmd='python scripts/setup_mcp.py --apply',
+        ))
+
     return dict(status='ready', ready=True, blocking=False,
                 ask='可以开始了。你想投什么岗位？',
                 actions=[], done=done, missing=[],
+                suggestions=suggestions,
                 data_dir=DATA_DIR, config_path=CFG_PATH,
                 jobs_cache_hours=(round(cache_h, 1) if cache_h is not None else None),
                 profile_missing_required=profile_missing_count())
@@ -483,7 +512,9 @@ def act_install_deps(_):
         deps = os.path.join(DATA_DIR, 'deps')
         os.makedirs(deps, exist_ok=True)
         print(f'正在装 Playwright 到 {deps} …')
-        npm = shutil.which('npm') or r'D:\nodejs\npm.cmd'
+        npm = _probe_npm()
+        if not npm:
+            sys.exit('找不到 npm。Node.js 可能装得不完整，重装一次 nodejs.org 上的 LTS 版再来。')
         # 只装库，不下载浏览器：我们用 connectOverCDP 连用户自己装的 Edge/Chrome，
         # 自带那套 Chromium + Firefox + WebKit 有 200MB 上下，装完一次都不会用。
         # 实测这一步原来是安装耗时的大头（约两分钟，绝大多数花在下载浏览器）。
@@ -556,6 +587,16 @@ def act_sync_jobs(_):
         sys.exit('选项翻译失败：' + ((r2.stderr or r2.stdout or '')[-200:]))
 
 
+def act_apply_mcp(_):
+    """可选：把 Playwright MCP 接进 Claude 桌面版（不装也能用）"""
+    r = subprocess.run([sys.executable, os.path.join(HERE, 'setup_mcp.py'), '--apply'],
+                       capture_output=True, text=True, encoding='utf-8', errors='replace')
+    print((r.stdout or '').rstrip())
+    if r.returncode != 0:
+        print((r.stderr or '').rstrip())
+        sys.exit('配 Playwright MCP 失败')
+
+
 ACTIONS = {
     'init_data_dir': act_init_data_dir,
     'set_resume': act_set_resume,
@@ -563,6 +604,7 @@ ACTIONS = {
     'install_deps': act_install_deps,
     'make_anchors': act_make_anchors,
     'sync_jobs': act_sync_jobs,
+    'apply_mcp': act_apply_mcp,
 }
 
 
