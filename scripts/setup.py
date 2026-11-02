@@ -2,6 +2,7 @@
 """启动检查：一次只报一个卡点，修完再报下一个
 
 用法:
+  python scripts/setup.py --welcome             # 开场白（纯文本，原样念给用户）
   python scripts/setup.py --check
   python scripts/setup.py --apply <动作> [参数]
 
@@ -150,6 +151,62 @@ def build_state():
     d = _build_state()
     d['warnings'] = env_warnings()
     return d
+
+
+# ---------- 开场白 ----------
+# 写死在代码里，不交给模型自由发挥：同一个东西，换个模型说话就不一样，
+# 用户第一次接触到的印象就会飘。这里给它一段固定的、可逐字念的话。
+
+WELCOME_FIRST = """\
+我来帮你投简历。
+
+先把话说清楚，你再决定要不要继续。
+
+**我会做的**：把你手上的简历整理成一份信息库，之后所有网申表格都从这儿取数；按每个岗位的 JD 微调简历，版式和你原来的一模一样；从岗位库里挑出匹配的岗位；打开招聘官网，把能填的字填好；把每次投递记进进度表。
+
+**需要你做的**：扫码登录招聘网站；点掉那些我没法代填的控件（自定义下拉、日期、单选）；最后按「提交」——这个我永远不替你按。
+
+**我不会做的**：不编造你没做过的经历，不改你简历上任何一个数字，不把你的信息传到任何地方。身份证这类敏感信息默认只加密存在你自己电脑上，你也可以选择全部自己填。
+
+现在开始。第一件事是看你这台机器缺什么，十几秒。"""
+
+WELCOME_BACK = """\
+欢迎回来。
+
+上次停在：{phase}{where}。{todo}
+
+接着往下走？"""
+
+WELCOME_READY = """\
+已经就绪了，随时可以开始。
+
+这次想投什么岗位？如果没有明确想法，我可以从你的经历里推几个方向给你看。"""
+
+
+def load_state():
+    p = os.path.join(DATA_DIR, 'user', 'state.json')
+    if not os.path.exists(p):
+        return {}
+    try:
+        return json.load(open(p, encoding='utf-8-sig'))
+    except Exception:
+        return {}
+
+
+def welcome_text():
+    st = load_state()
+    if not os.path.exists(CFG_PATH):
+        return WELCOME_FIRST
+    phase = (st.get('phase') or '').strip()
+    if phase:
+        where = ''
+        if st.get('company') or st.get('position'):
+            where = '，{}｜{}'.format(st.get('company') or '', st.get('position') or '')
+        todo = ''
+        if st.get('todo'):
+            todo = '还差：' + '；'.join(st['todo'][:3]) + '。'
+        return WELCOME_BACK.format(phase=phase, where=where, todo=todo)
+    return WELCOME_READY
 
 
 def _build_state():
@@ -456,6 +513,9 @@ def main():
         return 2
 
     argv = sys.argv[1:]
+    if '--welcome' in argv:
+        print(welcome_text())
+        return 0
     if not argv or '--check' in argv:
         out(build_state())
         return 0

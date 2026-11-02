@@ -12,6 +12,7 @@
  *   node scripts/apply.cjs <链接> --resume "D:/简历库/pdf/xx.pdf" --company "某公司" --expect "用户运营"
  *   node scripts/apply.cjs <链接> --page=campus/detail --login-timeout=180
  *   node scripts/apply.cjs <链接> --json          # 只要机器可读结果
+ *   node scripts/apply.cjs <链接> --no-state      # 试跑用：不写 state.json
  *
  * 它会拦三件事：
  *   · 传的是母版（没跑过微调的那一份）——除非加 --allow-master
@@ -52,6 +53,8 @@ const COMPANY = arg('company', '');
 const LOGIN_TIMEOUT = parseInt(arg('login-timeout', '180'), 10) * 1000;
 const AS_JSON = process.argv.includes('--json');
 const ALLOW_MASTER = process.argv.includes('--allow-master');
+// 试跑时用：不要把测试数据写进真实的 state.json（踩过一次，把用户进度覆盖了）
+const NO_STATE = process.argv.includes('--no-state');
 
 function say(...a) { if (!AS_JSON) console.log(...a); }
 
@@ -261,7 +264,7 @@ async function upload(page, file) {
   const audit = info.audit || {};
   const ready = audit.required_empty_count === 0 && resumePresent && expectOk;
 
-  const saved = saveState({
+  const saved = NO_STATE ? '' : saveState({
     company: COMPANY, position: EXPECT || title,
     resume: RESUME ? path.basename(RESUME) : '',
     required_empty: audit.required_empty || [],
