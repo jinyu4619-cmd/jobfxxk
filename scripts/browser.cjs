@@ -8,6 +8,7 @@
  *   node scripts/browser.cjs launch <url>      用 config 里选定的浏览器开窗口（带调试端口）
  *   node scripts/browser.cjs dump              导出当前页所有表单字段（字段名/类型/当前值/下拉选项）
  *   node scripts/browser.cjs fill <json>       填字：文字框直接填，原生下拉挑选项，都回读验证
+ *   node scripts/browser.cjs pick <json>       自定义下拉：点开→挑选项→回读，歧义就报错不猜
  *   node scripts/browser.cjs shot <png>        截图，给用户看当前状态
  *   node scripts/browser.cjs pages             列出所有标签页
  *   node scripts/browser.cjs close             关掉自动化浏览器
@@ -29,6 +30,7 @@ const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
 const ops = require('./page_ops.cjs');
+const { pickOnPage } = require('./pick_logic.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const { config: readCfg, dataDir } = require('./config.cjs');
@@ -177,6 +179,38 @@ async function cmdFill(jsonPath) {
   process.exit(bad ? 1 : 0);
 }
 
+/**
+ * pick <json> —— 自定义下拉代填
+ *
+ * 这类控件是 div 触发器加一层浮层，不是原生 select，只能「点开 → 读选项 → 点中 → 回读」。
+ * 四条硬规则，缺一条就停，绝不猜：
+ *   1. 浮层必须只有一层可见，同时冒出两个说明还有别的下拉开着，按顺序点就会点错
+ *   2. 选项里必须有唯一命中（先完全同名，再唯一包含），多个都像就报候选
+ *   3. 点完立刻回读触发器上的显示文字，对不上算失败
+ *   4. 不滚动找、不重试第二次——点错了比没填更糟
+ */
+async function cmdPick(jsonPath) {
+  if (!jsonPath) die('用法: pick <json文件路径>');
+  const items = JSON.parse(fs.readFileSync(jsonPath, 'utf8'));
+  const browser = await connect();
+  const page = await currentPage(browser);
+  // 逻辑在 pick_logic.cjs，测试脚本用的是同一份
+  result(await pickOnPage(page, ops, items));
+}
+
+function result(out) {
+  out.forEach(r => {
+    if (r.ok) { log('✓ ' + r.label + ' → ' + r.got); return; }
+    log('✗ ' + r.label + ' → ' + (r.why || ('点完读回来是「' + r.got + '」，不对')));
+    if (r.candidates && r.candidates.length) {
+      log('    可选：' + r.candidates.join(' / '));
+    }
+  });
+  const bad = out.filter(r => !r.ok).length;
+  log(`\n成功 ${out.length - bad} 个，失败 ${bad} 个`);
+  process.exit(bad ? 1 : 0);
+}
+
 async function cmdUpload(file) {
   if (!file) die('用法: upload <文件绝对路径>');
   if (!fs.existsSync(file)) die('文件不存在: ' + file);
@@ -242,6 +276,7 @@ async function cmdPages() {
     case 'launch': await cmdLaunch(arg); break;
     case 'dump': await cmdDump(); break;
     case 'fill': await cmdFill(arg); break;
+    case 'pick': await cmdPick(arg); break;
     case 'upload': await cmdUpload(arg); break;
     case 'text': await cmdText(arg); break;
     case 'shot': await cmdShot(arg); break;

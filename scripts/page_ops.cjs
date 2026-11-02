@@ -331,17 +331,56 @@ function fillInPage(items) {
   return out;
 }
 
+/** 按标签找自定义下拉的容器（可点击打开浮层的那个外层节点） */
+function widgetBoxInPage(label) {
+  const boxes = [];
+  document.querySelectorAll(CUSTOM_SEL).forEach(el => {
+    const box = el.closest(CUSTOM_BOX) || el;
+    if (boxes.indexOf(box) < 0) boxes.push(box);
+  });
+  for (let i = 0; i < boxes.length; i++) {
+    const b = boxes[i];
+    if (!isVisible(b)) continue;
+    const t = labelAround(b) || b.getAttribute('aria-label') || '';
+    if (t.indexOf(label) >= 0) return b;
+  }
+  return null;
+}
+
+/** 读回某个下拉现在显示的值（点完之后核对用） */
+function boxTextInPage(label) {
+  const b = widgetBoxInPage(label);
+  if (!b) return null;
+  const inp = b.querySelector('input');
+  return {
+    text: (b.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 40),
+    value: inp ? (inp.value || '').slice(0, 40) : '',
+  };
+}
+
+function widgetExpression(label) {
+  return '(function(){' + HELPERS + CONSTS + 'return (' + widgetBoxInPage.toString() +
+    ')(' + JSON.stringify(label) + ');})()';
+}
+
+function boxTextExpression(label) {
+  return '(function(){' + HELPERS + CONSTS + 'return (' + boxTextInPage.toString() +
+    ')(' + JSON.stringify(label) + ');})()';
+}
+
 // ---------- 拼成能在页面里独立执行的表达式 ----------
 
 const CUSTOM_SEL_STR = '[role="combobox"],[aria-haspopup="listbox"],.ant-select,.el-select,' +
-  '.el-cascader,.ivu-select,.beisen-select,.phoenix-select,[class*="select-trigger"]';
-const CUSTOM_BOX_STR = '.ant-select,.el-select,.el-cascader,.ivu-select,.beisen-select,.phoenix-select';
+  '.el-cascader,.ivu-select,.beisen-select,.phoenix-select,[class*="atsx-select"],' +
+  '[class*="select-trigger"]';
+const CUSTOM_BOX_STR = '.ant-select,.el-select,.el-cascader,.ivu-select,.beisen-select,' +
+  '.phoenix-select,[class*="atsx-select"]';
 // 取字段名时要先抠掉的东西：控件本体、选择器容器、日期区间容器
 const WIDGET_SEL_STR = 'input,textarea,select,' + CUSTOM_SEL_STR + ',[class*="date-picker"]';
 const STRIP_SEL_STR = WIDGET_SEL_STR;
 
 const HELPERS = [isVisible, labelOf, labelAround, norm, requiredMark, pickOption, findControls,
-  findCustomSelect, setInputValue, selectValue].map(f => f.toString()).join('\n');
+  findCustomSelect, setInputValue, selectValue, widgetBoxInPage].map(f => f.toString()).join('\n');
 
 const CONSTS = 'const CUSTOM_SEL=' + JSON.stringify(CUSTOM_SEL_STR) + ';' +
   'const CUSTOM_BOX=' + JSON.stringify(CUSTOM_BOX_STR) + ';' +
@@ -359,7 +398,7 @@ function fillExpression(items) {
 }
 
 module.exports = {
-  dumpExpression, fillExpression,
+  dumpExpression, fillExpression, widgetExpression, boxTextExpression,
   // 留出可单独调用的版本，方便别处复用或单测
   dumpInPage, fillInPage, pickOption, norm, labelOf, isVisible,
 };

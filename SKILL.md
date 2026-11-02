@@ -856,17 +856,22 @@ node scripts/browser.cjs shot now.png
 
 规则写在 `page_ops.cjs` 里，不用你判断：完全同名唯一就选它；包含关系唯一也选它（「硕士」→「硕士研究生」）；**两项都像就报错并把候选列出来，不猜**；一项都不像就报没找到，页面上的值保持不动。选完立刻回读 `selectedOptions` 的文字，对不上算失败。
 
-**自定义下拉（`type: "custom-select"`）——只识别，不代填。**
+**自定义下拉（`type: "custom-select"`）——能代填，但要按规矩来。**
 
-antd、element、北森那类 div 浮层，`dump` 会把它标出来并读出当前显示的文字，但不会去点。给用户一句指引：这格是什么、建议选哪个。
+antd、element、北森、飞书那类 div 浮层，`fill` 填不了（它不是 input 也不是 select），用 `pick`：
 
 ```bash
-node scripts/browser.cjs fill fill.json    # select 会被选上，custom-select 会回「需要用户点」
+node scripts/browser.cjs pick pick.json
+# [{"label": "学历", "value": "硕士"}]
 ```
 
-> 这一格是「到岗时间」，下拉选项，需要你自己选。我建议选 **2027-01**，你按需改。
+它做四件事：点开浮层 → 读出所有可见选项 → 唯一命中才点 → 点完回读触发器上的显示文字。
 
-**日期区间、级联地区、单选、多选一样留给用户。** `dump` 里 `type: "date-range"` 的就是日期区间，它能读出当前值（比如「2024-09 2027-06」），但改不了，要用户点。多选和级联的 `<select>` 即使能识别也不代填——级联选完上一级会重建下一级，追着改容易错位。
+**四条硬规则，缺一条就停，绝不猜**：
+
+浮层必须只有一层可见——同时冒出两个说明还有别的下拉开着，按顺序点就会点错（真实事故：把期望月薪点成了「1000 以下」）。选项里必须唯一命中，先完全同名再唯一包含，「东方大学」和「南山大学」都含「大学」时报歧义并列出候选。点完立刻回读，对不上算失败。不滚动找、不重试第二次——点错比没填更糟。
+
+**日期区间、级联地区、单选、多选仍然留给用户。** `dump` 里 `type: "date-range"` 的是日期区间，能读值、改不了。多选和级联的 `<select>` 即使能识别也不代填——级联选完上一级会重建下一级，追着改容易错位。
 
 **给建议值之前先看 `options`。** 别凭档案凭空推荐一个系统里根本没有的选项，那等于让用户白点一次。
 
@@ -1033,7 +1038,7 @@ python scripts/verify.py tracker
 | `scripts/gate.py` | 阶段闸门：找岗/微调/填表/记账前各验一遍（填表前会查改动校验记录） |
 | `scripts/fetch_jd.cjs` | 后台读某条岗位的 JD 正文 |
 | `scripts/apply.cjs` | **投递入口**：打开岗位→点投递→等登录→传简历→等解析→空字段体检，一条命令走完 |
-| `scripts/browser.cjs` | 浏览器操作：launch / dump / fill / upload / text / shot / pages / close（页内逻辑在 `scripts/page_ops.cjs`） |
+| `scripts/browser.cjs` | 浏览器操作：launch / dump / fill / pick / upload / text / shot / pages / close（页内逻辑在 `page_ops.cjs`，自定义下拉在 `pick_logic.cjs`） |
 | `scripts/fill_engine.py` | 三道关（窗口 / 事实 / 说法）+ Word 替换 + 版面复验 |
 | `scripts/lint_draft.py` | 改动校验：数字·日期·奖项有没有出处，有没有夸大词 |
 | `scripts/write_tracker.py` | 追加投递记录、改状态并重算台账统计 |
