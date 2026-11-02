@@ -55,7 +55,7 @@ python scripts/setup.py --check
 | 5 | 定志愿 | 用户定 |
 | 6 | 按 JD 微调简历、复验版式 | `fill_engine.py`（内含 `lint_draft.py` 的事实关与说法关）、`verify.py layout` |
 | 7 | 开官网、用户登录 | `browser.cjs launch` |
-| 8 | 上传简历、填文字框 | `browser.cjs upload / fill` |
+| 8 | 上传简历、填文字框 | `apply.cjs`（一条命令走到表单就绪）、`browser.cjs fill / dump` |
 | 9 | 核对，用户提交 | — |
 | 10 | 写台账 | `write_tracker.py`、`verify.py tracker` |
 

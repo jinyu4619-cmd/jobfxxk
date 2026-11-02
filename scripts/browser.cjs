@@ -147,6 +147,11 @@ async function cmdDump() {
   const page = await currentPage(browser);
   // 页内逻辑在 page_ops.cjs，测试脚本用的是同一份
   const info = await page.evaluate(ops.dumpExpression());
+  // --only-empty：只看空着的，省得每次读几十条已填好的字段
+  if (process.argv.includes('--only-empty')) {
+    info.rows = info.rows.filter(r => r.empty);
+    delete info.audit;
+  }
   log(JSON.stringify(info, null, 1));
   process.exit(0);
 }
@@ -188,14 +193,19 @@ async function cmdUpload(file) {
   const idx = isPhoto ? n - 1 : 0;
 
   await inputs.nth(idx).setInputFiles(file);
-  await page.waitForTimeout(3000);
 
   const base = path.basename(file);
-  // 控件里的 files 只是个中间态：很多系统（飞书招聘就是）接完文件就把原生控件清空，
+  // 等「页面上出现这个文件名」，而不是干等固定几秒；最多等 8 秒
+  let shown = false;
+  for (let i = 0; i < 16; i++) {
+    await page.waitForTimeout(500);
+    shown = await page.evaluate(n => document.body.innerText.indexOf(n) >= 0, base)
+      .catch(() => false);
+    if (shown && i >= 1) break;      // 至少等 1 秒，避免刚传上去还没渲染
+  }
+  // 控件里的 files 只是个中间态：飞书招聘这类系统接完文件就把原生控件清空，
   // 拿它当唯一依据会报假失败。真正的判据是「页面上出现了这个文件名」。
   const n2 = await inputs.nth(idx).evaluate(el => (el.files ? el.files.length : 0)).catch(() => 0);
-  const shown = await page.evaluate(n => document.body.innerText.indexOf(n) >= 0, base)
-    .catch(() => false);
   log((n2 > 0 || shown ? '✓ ' : '✗ ') + '已上传 ' + base +
       '（' + (n2 > 0 ? '控件里有文件' : shown ? '页面上已出现文件名' : '控件和页面都没看到') + '）');
   log('提示：上传可能触发简历解析并重置表单，下一步先 dump 确认字段状态');

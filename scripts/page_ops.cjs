@@ -59,6 +59,20 @@ function norm(s) {
   return (s == null ? '' : String(s)).normalize('NFKC').replace(/\s+/g, '');
 }
 
+/** 这个字段是不是必填：看 required 属性、aria-required、或容器里的星号 */
+function requiredMark(el) {
+  if (el.required === true) return 'Y';
+  if ((el.getAttribute('aria-required') || '') === 'true') return 'Y';
+  let p = el.parentElement, d = 0;
+  while (p && d < 4) {
+    const t = (p.innerText || '');
+    if (t.length < 60 && t.indexOf('*') >= 0) return 'Y';
+    if (p.querySelectorAll('input,textarea,select').length > 1) break;
+    p = p.parentElement; d++;
+  }
+  return '';
+}
+
 /**
  * 在原生 select 里挑一个选项
  * 完全同名唯一 → 用；包含关系唯一 → 用；多个都像 → 报歧义，不猜；一个都不像 → 报没找到。
@@ -151,7 +165,9 @@ function dumpInPage() {
       placeholder: el.getAttribute('placeholder') || '',
       value: (el.value || '').toString().slice(0, 40),
       readonly: el.readOnly ? 'Y' : '',
+      required: requiredMark(el),
     };
+    row.empty = !row.value;
 
     if (el.tagName === 'SELECT') {
       // 读选项：这是能不能安全代填的前提——不知道有哪些选项就只能猜
@@ -179,6 +195,8 @@ function dumpInPage() {
       type: 'custom-select',
       label: labelAround(box) || (el.getAttribute('aria-label') || ''),
       value: (box.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 40),
+      required: requiredMark(box),
+      empty: !(box.innerText || '').replace(/\s+/g, '').trim(),
       note: '自定义下拉：选项在浮层里，需要用户点',
     });
   });
@@ -201,11 +219,30 @@ function dumpInPage() {
       type: 'date-range',
       label: key,
       value: (el.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 40),
+      required: requiredMark(el),
+      empty: !(el.innerText || '').replace(/\s+/g, '').trim(),
       note: '日期区间：值是显示文字，改要用户点',
     });
   });
 
-  return { url: location.href, title: document.title, rows };
+  // 体检：空着的字段分必填/非必填两类。
+  // 非必填且信息库里没有的，不代填，只报给用户让他自己决定。
+  const skip = { radio: 1, checkbox: 1, hidden: 1, file: 1 };
+  const reqEmpty = [], optEmpty = [];
+  rows.forEach(r => {
+    if (skip[r.type] || !r.empty) return;
+    (r.required === 'Y' ? reqEmpty : optEmpty).push(r.label || ('未命名字段#' + r.i));
+  });
+
+  return {
+    url: location.href, title: document.title, rows,
+    audit: {
+      required_empty: reqEmpty,
+      optional_empty: optEmpty,
+      required_empty_count: reqEmpty.length,
+      optional_empty_count: optEmpty.length,
+    },
+  };
 }
 
 /**
@@ -275,8 +312,8 @@ const CUSTOM_BOX_STR = '.ant-select,.el-select,.el-cascader,.ivu-select,.beisen-
 const WIDGET_SEL_STR = 'input,textarea,select,' + CUSTOM_SEL_STR + ',[class*="date-picker"]';
 const STRIP_SEL_STR = WIDGET_SEL_STR;
 
-const HELPERS = [isVisible, labelOf, labelAround, norm, pickOption, findControls, findCustomSelect,
-  setInputValue, selectValue].map(f => f.toString()).join('\n');
+const HELPERS = [isVisible, labelOf, labelAround, norm, requiredMark, pickOption, findControls,
+  findCustomSelect, setInputValue, selectValue].map(f => f.toString()).join('\n');
 
 const CONSTS = 'const CUSTOM_SEL=' + JSON.stringify(CUSTOM_SEL_STR) + ';' +
   'const CUSTOM_BOX=' + JSON.stringify(CUSTOM_BOX_STR) + ';' +
