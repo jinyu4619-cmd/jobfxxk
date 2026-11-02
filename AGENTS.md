@@ -49,9 +49,9 @@ python scripts/setup.py --check
 | 0 | 启动检查、断点恢复 | `setup.py --check` |
 | 1 | 把简历读成文本、按板块一次核对 | `read_resume.py`、`profile.py exp attach-raw`、`profile.py exp review`（贴原文，别逐条问） |
 | 2 | 建个人信息库（只问缺的） | `profile.py missing / set / mode / review` |
-| 2.5 | 问意向：开放地问「想投什么」，同时列出经历推出来的 3–4 个方向 | `directions.py` |
+| 2.5 | 问意图：**有目标就直接投，没有才筛选**（筛选要先说明耗时） | 按钮两选一；有目标时跳过阶段 4 |
 | 3 | 定模板、标定行宽 | `make_anchors.py`、`compose.py` |
-| 4 | 现拉岗位库、筛岗、读 JD | `sync_jobs.cjs`、`translate_jobs.py`、`filter_jobs.py`、`fetch_jd.cjs` |
+| 4 | 现拉岗位库、筛岗、读 JD（**只有走筛选才到这里**） | `sync_jobs.cjs`、`translate_jobs.py`、`recommend.py`、`fetch_jd.cjs` |
 | 5 | 定志愿 | 用户定 |
 | 6 | 按 JD 微调简历、复验版式 | `fill_engine.py`（内含 `lint_draft.py` 的事实关与说法关）、`verify.py layout` |
 | 7 | 开官网、用户登录 | `browser.cjs launch` |
