@@ -26,7 +26,8 @@
  */
 const path = require('path');
 const fs = require('fs');
-const REPO = 'D:/27秋招/jobfxxk';
+// 用脚本自身位置推导，别写死绝对路径——写死的话换台电脑就 require 不到了
+const REPO = path.resolve(__dirname, '..');
 require(path.join(REPO, 'scripts/ensure_deps.cjs'));
 const { chromium } = require('playwright');
 const ops = require(path.join(REPO, 'scripts/page_ops.cjs'));
@@ -54,15 +55,9 @@ const ALLOW_MASTER = process.argv.includes('--allow-master');
 
 function say(...a) { if (!AS_JSON) console.log(...a); }
 
-/** 配置：用来判断传的是不是母版 */
+/** 配置：用来判断传的是不是母版。查找规则与 paths.py / config.cjs 完全一致 */
 function cfg() {
-  const cands = [process.env.JOBFXXK_CONFIG,
-    path.join(path.dirname(REPO), 'jobfxxk-data', 'config.json'),
-    path.join(REPO, 'config.json')].filter(Boolean);
-  for (const p of cands) {
-    try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) {}
-  }
-  return {};
+  try { return require(path.join(REPO, 'scripts', 'config.cjs')).config(); } catch (e) { return {}; }
 }
 
 /** 传的简历是不是「母版」——没跑过微调的那一份
@@ -80,8 +75,7 @@ function isMaster(file) {
 /** 落一次进度，断了能接上 */
 function saveState(info) {
   try {
-    const dataDir = process.env.JOBFXXK_DATA
-      || path.join(path.dirname(REPO), 'jobfxxk-data');
+    const dataDir = require(path.join(REPO, 'scripts', 'config.cjs')).dataDir();
     const p = path.join(dataDir, 'user', 'state.json');
     let d = {};
     try { d = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) {}

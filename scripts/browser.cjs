@@ -31,13 +31,12 @@ const { spawn } = require('child_process');
 const ops = require('./page_ops.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
-const PARENT = path.dirname(ROOT);
+const { config: readCfg, dataDir } = require('./config.cjs');
 
-// 个人数据放在仓库外面（与仓库平级的 jobfxxk-data），仓库本身保持干净
-const DATA = path.join(PARENT, 'jobfxxk-data');
-const CFG_PATH = [process.env.JOBFXXK_CONFIG, path.join(DATA, 'config.json'), path.join(ROOT, 'config.json')]
-  .filter(Boolean).find(p => fs.existsSync(p));
-const CFG = CFG_PATH ? JSON.parse(fs.readFileSync(CFG_PATH, 'utf8')) : {};
+// 个人数据放在仓库外面；装成技能时在用户主目录下（由 config.cjs 统一判断，
+// 不能在这里写死「与仓库平级」——托管目录旁边没有那个文件夹）
+const DATA = dataDir();
+const CFG = readCfg();
 
 const PORT = 9222;
 const PROFILE = path.join(DATA, 'browser-profile');

@@ -97,6 +97,8 @@ description: 把秋招投递从头做到尾。用户给出简历或口述经历�
 python scripts/setup.py --check
 ```
 
+**如果这条命令本身就报错**（`python` 不是命令、版本太低），说明机器的 Python 没装好——这一层脚本查不了自己。直接告诉用户：需要 Python 3.9+ 和 Node.js 20+，装完再来；别在这里自己想办法绕。
+
 它返回一段 JSON，你只做三件事：
 
 1. `ready: true` → 读 `state.json` 和投递台账，给用户三行摘要，进阶段 1

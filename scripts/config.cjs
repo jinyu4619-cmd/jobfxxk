@@ -19,6 +19,9 @@ function configPath() {
     cands.push(path.join(process.env.JOBFXXK_DATA, 'config.json'));
   } else {
     cands.push(path.join(path.dirname(REPO), 'jobfxxk-data', 'config.json'));
+    // 装成技能时，代码在应用托管目录里、旁边没有 jobfxxk-data，
+    // 数据在用户主目录下——这一条不加，Node 脚本会一个配置都找不到
+    cands.push(path.join(require('os').homedir(), 'jobfxxk-data', 'config.json'));
     cands.push(path.join(REPO, 'config.json'));
   }
   for (const p of cands) {
@@ -40,7 +43,10 @@ function config() {
 function dataDir() {
   const p = configPath();
   if (p) return path.dirname(p);
-  return path.join(path.dirname(REPO), 'jobfxxk-data');
+  const sibling = path.join(path.dirname(REPO), 'jobfxxk-data');
+  try { if (fs.existsSync(sibling)) return sibling; } catch (e) { /* ignore */ }
+  // 装成技能时旁边没有 jobfxxk-data，规范位置是主目录下
+  return path.join(require('os').homedir(), 'jobfxxk-data');
 }
 
 /** 配置里的路径统一成正斜杠 → 本机绝对路径 */
