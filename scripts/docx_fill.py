@@ -178,9 +178,17 @@ def replace_in_document(docx_path, out_path, pairs):
             t_new = (new or '')[pre:len(new) - suf] if suf else (new or '')[pre:]
             p_start = k + len(nospace((old or '')[:pre]))
             p_end = k + len(target) - (len(nospace((old or '')[len(old) - suf:])) if suf else 0)
-            if p_end <= p_start:
+            if p_end < p_start:
                 continue
-            start, end = idx[p_start], idx[p_end - 1] + 1
+            if p_end == p_start:
+                # 纯插入：旧文本这一段没变，只是中间多塞了几个字。
+                # 以前这里直接 continue，把「数据监控 → 数据监控与异常定位」
+                # 这种合法插入当成没匹配到，白跑一轮。
+                if not t_new:
+                    continue
+                start = end = idx[p_start]
+            else:
+                start, end = idx[p_start], idx[p_end - 1] + 1
 
             # 覆盖到的 run
             spans, p2 = [], 0

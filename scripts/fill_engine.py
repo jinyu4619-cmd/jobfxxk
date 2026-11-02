@@ -30,9 +30,18 @@ def need(key, desc):
     return v
 
 
-MASTER = (CFG.get('master_docx') or '').replace('/', os.sep)
-BASE_PDF = (CFG.get('master_pdf') or '').replace('/', os.sep)
-ANCHOR = (CFG.get('anchors') or '').replace('/', os.sep)
+# 两套母版：母版1 通用运营，母版2 AI 产品。--master 2 切到第二套，
+# 锚点表和版式基准都跟着换——两份的槽位和行容量是各自标定的，不能混用。
+_MASTER_NO = '2' if ('--master' in sys.argv and
+                     sys.argv[sys.argv.index('--master') + 1:][:1] == ['2']) else '1'
+if _MASTER_NO == '2':
+    MASTER = (CFG.get('master2_docx') or '').replace('/', os.sep)
+    BASE_PDF = (CFG.get('master2_pdf') or '').replace('/', os.sep)
+    ANCHOR = (CFG.get('anchors2') or '').replace('/', os.sep)
+else:
+    MASTER = (CFG.get('master_docx') or '').replace('/', os.sep)
+    BASE_PDF = (CFG.get('master_pdf') or '').replace('/', os.sep)
+    ANCHOR = (CFG.get('anchors') or '').replace('/', os.sep)
 RESUME_DIR = (CFG.get('resume_dir') or '').replace('/', os.sep)
 TMP = os.path.join(DATA_DIR, 'tmp')
 
@@ -178,7 +187,7 @@ def find_draft(argv):
         if skip:
             skip = False
             continue
-        if a in ('--out', '--allow'):
+        if a in ('--out', '--allow', '--master'):
             skip = True
             continue
         if not a.startswith('--'):
@@ -225,8 +234,11 @@ def main():
         sys.exit(2)
     out_name = argv[argv.index('--out') + 1]
 
-    MASTER_PATH = need('master_docx', '母版 Word')
-    BASE_PDF_PATH = need('master_pdf', '母版 PDF')
+    _k = 'master2_docx' if _MASTER_NO == '2' else 'master_docx'
+    _kp = 'master2_pdf' if _MASTER_NO == '2' else 'master_pdf'
+    MASTER_PATH = need(_k, '母版 %s Word' % _MASTER_NO)
+    BASE_PDF_PATH = need(_kp, '母版 %s PDF' % _MASTER_NO)
+    print('母版 %s：%s' % (_MASTER_NO, os.path.basename(MASTER_PATH)))
     if not os.path.exists(draft_path):
         print(f'找不到草稿文件：{draft_path}')
         sys.exit(2)

@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """标定模板：从 PDF 量行容量，从 docx 读槽位，生成锚点表（含字数窗口）
 
-用法: python scripts/make_anchors.py [--capacity 50]
+用法: python scripts/make_anchors.py [--master 1|2] [--capacity 50]
 
 容量是从 PDF 里「占满整行」的那些行反推的。以前只看第一页——
 两页简历的第一页往往最宽，会算偏，所以现在逐页扫。
@@ -15,9 +15,18 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from paths import CFG, path_of
 
-DOCX = (CFG.get('master_docx') or '').replace('/', os.sep)
-PDF = (CFG.get('master_pdf') or '').replace('/', os.sep)
-OUT = path_of('anchors', os.path.join('user', '锚点表.json'))
+# 母版可以有多份：--master 2 就标定第二份（JD 里有 AI 要求时用的那份）。
+# 每份母版有自己的锚点表，互不覆盖。
+_m = 2 if '--master' in sys.argv and sys.argv[sys.argv.index('--master') + 1:][:1] == ['2'] else 1
+if _m == 2:
+    DOCX = (CFG.get('master2_docx') or '').replace('/', os.sep)
+    PDF = (CFG.get('master2_pdf') or '').replace('/', os.sep)
+    OUT = (CFG.get('anchors2') or '').replace('/', os.sep) or \
+        path_of('anchors2', os.path.join('user', '锚点表-母版2.json'))
+else:
+    DOCX = (CFG.get('master_docx') or '').replace('/', os.sep)
+    PDF = (CFG.get('master_pdf') or '').replace('/', os.sep)
+    OUT = path_of('anchors', os.path.join('user', '锚点表.json'))
 
 # 日期区间：2026.07-2026.10 / 2026年7月— / 2026/07 ~
 DATE = re.compile(r'20\d{2}\s*[.\-/年]\s*\d{1,2}\s*月?\s*[-–—~至]')
@@ -98,6 +107,7 @@ def main():
     if '--capacity' in sys.argv:
         cap_arg = int(sys.argv[sys.argv.index('--capacity') + 1])
 
+    print(f'标定母版 {_m}：{os.path.basename(DOCX)}')
     cap, width, samples = measure_capacity(PDF)
     print(f'自动估到每行 {cap} 字（可用宽度 {width}pt，满行样本 {samples} 条）')
 
@@ -142,7 +152,11 @@ def main():
                               lo=0, hi=cap,
                               note=f'超过 {cap} 字会折行，日期被挤到下一行'))
         else:
-            lo = (lines - 1) * cap + 12
+            # 下限：刚好超过上一行的容量，才能继续占满 lines 行。
+            # 以前写成 +12，结果一行 103 字、占 3 行的段落，自己的原文都进不了
+            # 自己的窗口（下限被算成 112）——典型的「规则拦住了正确做法」。
+            lo = (lines - 1) * cap + 1
+            lo = min(lo, n)      # 原文永远在自己窗口内
             hi = lines * cap
             slots.append(dict(kind='正文', text=t[:22] + '…', full=t, chars=n, lines=lines,
                               lo=lo, hi=hi,
