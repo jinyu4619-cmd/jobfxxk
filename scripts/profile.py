@@ -76,6 +76,9 @@ FIELDS = [
     ('D3', 'intent.cities', '期望城市', 'P2', True, '按优先级排'),
     ('D6', 'intent.available', '到岗时间', 'P2', True, '很多公司会卡这个'),
     ('D8', 'intent.travel', '是否接受出差', 'P2', False, '渠道、零售类常问'),
+    ('D9', 'intent.exclude', '排除线', 'P2', False,
+     '3–5 条不退让的否决项，逗号分隔；找岗时按它硬淘汰'),
+    ('D10', 'intent.hours_week', '每周可投入', 'P2', False, '小时数，用来判断笔试类岗位的时间成本'),
 
     ('E2a', 'contact.emergency', '紧急联系人', 'P0', False, '姓名与关系；默认不代填'),
     ('E2b', 'contact.emergency_phone', '紧急联系人电话', 'P0', False, '默认不代填'),

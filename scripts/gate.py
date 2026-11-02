@@ -71,6 +71,13 @@ def gate4():
                         '先跑 python scripts/directions.py，把方向念给用户确认，'
                         '再写进 profile.json 的 intent.directions'))
 
+    ex = (prof.get('intent') or {}).get('exclude') or []
+    if isinstance(ex, str):
+        ex = [x for x in ex.replace('，', ',').split(',') if x.strip()]
+    checks.append(check('排除线已设', bool(ex), f'{len(ex)} 条' if ex else '没设',
+                        '问用户 3–5 条绝对不投的（地点 / 强度 / 薪资下限 / 不碰的赛道），'
+                        '写进 profile.json 的 intent.exclude。一条也算'))
+
     cache = p(CFG.get('job_cache')) or os.path.join(DATA_DIR, 'data', 'jobs.json')
     ok_cache, detail = False, '岗位缓存不存在'
     if os.path.exists(cache):
