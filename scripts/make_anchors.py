@@ -9,11 +9,11 @@
 import json, os, re, sys, zipfile
 from collections import defaultdict
 sys.stdout.reconfigure(encoding='utf-8')
-from pypdf import PdfReader
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from paths import CFG, path_of
+from paths import CFG, path_of          # 先走 paths：它负责把 site-packages 补齐
+from pypdf import PdfReader
 
 # 母版可以有多份：--master 2 就标定第二份（JD 里有 AI 要求时用的那份）。
 # 每份母版有自己的锚点表，互不覆盖。

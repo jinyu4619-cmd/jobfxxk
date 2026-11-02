@@ -12,11 +12,11 @@
 """
 import json, os, shutil, subprocess, sys
 sys.stdout.reconfigure(encoding='utf-8')
-from pypdf import PdfReader
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
-from paths import CFG, DATA_DIR
+from paths import CFG, DATA_DIR          # 先走 paths：它负责把 site-packages 补齐
+from pypdf import PdfReader
 
 
 def need(key, desc):

@@ -10,7 +10,36 @@
 为什么要有第 3 条：装成 skill 之后，代码会落在应用托管的目录里，
 那个目录随版本更新会被替换。数据要是跟着代码走，升级一次就没了。
 """
-import json, os
+import json, os, sys, sysconfig
+
+
+def _ensure_site_packages():
+    """兜住一类畸形的 Python 安装：site-packages 会随工作目录漂移
+
+    便携版/手动解压安装的 Python 里，sys.prefix 可能是不带结尾分隔符的盘符（如 'D:'），
+    这时 site.getsitepackages() 会算出 'D:Lib\\site-packages' —— 这是个相对路径，
+    解析结果取决于「该盘符的当前目录」。于是在 D:\\ 下跑正常，一进子目录
+    site-packages 就整个从 sys.path 消失，pip 装过的包全部 import 不到。
+
+    实测现象：setup.py --check 在仓库目录里误报缺 pypdf，装完还是缺，卡在 no_deps 出不来。
+
+    sysconfig 给出的 purelib 是绝对路径，不受这个影响，所以在这里补一次。
+    正常的 Python 环境本来就已加载，这里补不进去也不会改变任何行为。
+    """
+    try:
+        paths = sysconfig.get_paths()
+    except Exception:
+        return
+    for key in ('purelib', 'platlib'):
+        p = paths.get(key)
+        try:
+            if p and os.path.isdir(p) and p not in sys.path:
+                sys.path.append(p)
+        except OSError:
+            pass
+
+
+_ensure_site_packages()
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(SCRIPT_DIR)
