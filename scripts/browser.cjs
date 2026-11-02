@@ -12,6 +12,10 @@
  *   node scripts/browser.cjs pages             列出所有标签页
  *   node scripts/browser.cjs close             关掉自动化浏览器
  *
+ * 所有命令都可以加 --page=<地址片段> 指定操作哪个标签页（默认最后一个）。
+ * 表格页、详情页、申请表同时开着的时候必须加，否则容易操作错页：
+ *   node scripts/browser.cjs dump --page=resume/7683
+ *
  * fill 的 json 格式：
  *   [{"label":"姓名","value":"张三"},{"label":"学历","value":"硕士"}]
  *
@@ -53,6 +57,14 @@ async function connect() {
 async function currentPage(browser) {
   const ctx = browser.contexts()[0];
   const pages = ctx.pages();
+  // 一条真实表单可能开着好几个标签（列表页、详情页、申请表），默认只取最后一个
+  // 很容易操作错页，所以支持 --page <地址片段> 指定
+  const hint = (process.argv.find(a => a.indexOf('--page=') === 0) || '').slice(7);
+  if (hint) {
+    const hit = pages.find(p => p.url().indexOf(hint) >= 0);
+    if (!hit) die('没有地址里含「' + hint + '」的标签页。现在开着：\n' + pages.map(p => '  ' + p.url()).join('\n'));
+    return hit;
+  }
   return pages[pages.length - 1];
 }
 
@@ -178,9 +190,14 @@ async function cmdUpload(file) {
   await inputs.nth(idx).setInputFiles(file);
   await page.waitForTimeout(3000);
 
-  // 文件控件不会在页面文字里显示文件名，直接读控件本身的 files
+  const base = path.basename(file);
+  // 控件里的 files 只是个中间态：很多系统（飞书招聘就是）接完文件就把原生控件清空，
+  // 拿它当唯一依据会报假失败。真正的判据是「页面上出现了这个文件名」。
   const n2 = await inputs.nth(idx).evaluate(el => (el.files ? el.files.length : 0)).catch(() => 0);
-  log((n2 > 0 ? '✓ ' : '✗ ') + '已上传 ' + path.basename(file) + '（第 ' + (idx + 1) + ' 个上传框，控件确认 ' + n2 + ' 个文件）');
+  const shown = await page.evaluate(n => document.body.innerText.indexOf(n) >= 0, base)
+    .catch(() => false);
+  log((n2 > 0 || shown ? '✓ ' : '✗ ') + '已上传 ' + base +
+      '（' + (n2 > 0 ? '控件里有文件' : shown ? '页面上已出现文件名' : '控件和页面都没看到') + '）');
   log('提示：上传可能触发简历解析并重置表单，下一步先 dump 确认字段状态');
   process.exit(0);
 }

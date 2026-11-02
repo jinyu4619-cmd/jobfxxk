@@ -24,8 +24,9 @@ function labelOf(el) {
     const n = p.querySelectorAll('input,textarea,select').length;
     if (n === 1) {
       const c = p.cloneNode(true);
-      c.querySelectorAll('input,textarea,select').forEach(x => x.remove());
-      const t = (c.innerText || '').replace(/\s+/g, ' ').trim();
+      c.querySelectorAll(STRIP_SEL).forEach(x => x.remove());
+      // 只取第一行：容器的第二行往后常常是提示语（「无准确的毕业时间可填写预计毕业时间」）
+      const t = (c.innerText || '').split('\n').map(s => s.trim()).filter(Boolean)[0] || '';
       if (t && t.length < 40) return t.slice(0, 30);
     }
     if (n > 1) break;
@@ -39,14 +40,12 @@ function labelOf(el) {
 function labelAround(el) {
   let p = el.parentElement, d = 0;
   while (p && d < 6) {
-    const total = p.querySelectorAll('input,textarea,select').length +
-                  p.querySelectorAll(CUSTOM_SEL).length;
-    const self = el.querySelectorAll('input,textarea,select').length +
-                 el.querySelectorAll(CUSTOM_SEL).length + 1;
+    const total = p.querySelectorAll(WIDGET_SEL).length;
+    const self = el.querySelectorAll(WIDGET_SEL).length + 1;
     if (total <= self) {
       const c = p.cloneNode(true);
-      c.querySelectorAll('input,textarea,select,' + CUSTOM_SEL).forEach(x => x.remove());
-      const t = (c.innerText || '').replace(/\s+/g, ' ').trim();
+      c.querySelectorAll(STRIP_SEL).forEach(x => x.remove());
+      const t = (c.innerText || '').split('\n').map(s => s.trim()).filter(Boolean)[0] || '';
       if (t && t.length < 40) return t.slice(0, 30);
     }
     if (total > self) break;
@@ -86,9 +85,9 @@ function pickOption(el, want) {
   return { err: '选项里没有这一项', candidates: all.slice(0, 20) };
 }
 
-/** 按标签找控件（input / textarea / select 一起找） */
-function findControl(label) {
-  return [...document.querySelectorAll('input,textarea,select')].filter(isVisible).find(el => {
+/** 按标签找控件，返回全部命中的（同名标签在表单里很常见，比如两个「获奖时间」） */
+function findControls(label) {
+  return [...document.querySelectorAll('input,textarea,select')].filter(isVisible).filter(el => {
     if ((el.getAttribute('type') || '').toLowerCase() === 'file') return false;
     let p = el.parentElement, d = 0;
     while (p && d < 6) {
@@ -184,6 +183,28 @@ function dumpInPage() {
     });
   });
 
+  // 日期区间控件：值在一个 0×0 的隐藏 input 里，真正的值显示在外层容器文字上。
+  // 不单独报的话，dump 会让人以为日期是空的——实测飞书招聘就是这样。
+  const seenDate = [];
+  document.querySelectorAll('[class*="date-picker"]').forEach(el => {
+    // 只认最外层的容器：里面的隐藏 input、内层节点都会命中这个选择器
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName)) return;
+    if (el.closest('[class*="date-picker"]') !== el) return;
+    if (!isVisible(el)) return;
+    if (el.querySelector('input:not([class*="hidden"]),textarea,select')) return;  // 里面还有真输入框，按控件算
+    const key = labelAround(el);
+    if (!key) return;
+    // 不按字段名去重：两个「起止时间」是两个真实控件，都得报出来
+    seenDate.push(el);
+    rows.push({
+      i: rows.length,
+      type: 'date-range',
+      label: key,
+      value: (el.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 40),
+      note: '日期区间：值是显示文字，改要用户点',
+    });
+  });
+
   return { url: location.href, title: document.title, rows };
 }
 
@@ -196,7 +217,9 @@ function fillInPage(items) {
 
   for (let i = 0; i < items.length; i++) {
     const it = items[i];
-    const el = findControl(it.label);
+    // 同名标签（比如两个「获奖时间」）用 nth 指定第几个，从 0 开始
+    const list = findControls(it.label);
+    const el = list[it.nth || 0];
 
     if (!el) {
       const custom = findCustomSelect(it.label);
@@ -246,14 +269,19 @@ function fillInPage(items) {
 // ---------- 拼成能在页面里独立执行的表达式 ----------
 
 const CUSTOM_SEL_STR = '[role="combobox"],[aria-haspopup="listbox"],.ant-select,.el-select,' +
-  '.el-cascader,.ivu-select,.beisen-select,[class*="select-trigger"]';
-const CUSTOM_BOX_STR = '.ant-select,.el-select,.el-cascader,.ivu-select,.beisen-select';
+  '.el-cascader,.ivu-select,.beisen-select,.phoenix-select,[class*="select-trigger"]';
+const CUSTOM_BOX_STR = '.ant-select,.el-select,.el-cascader,.ivu-select,.beisen-select,.phoenix-select';
+// 取字段名时要先抠掉的东西：控件本体、选择器容器、日期区间容器
+const WIDGET_SEL_STR = 'input,textarea,select,' + CUSTOM_SEL_STR + ',[class*="date-picker"]';
+const STRIP_SEL_STR = WIDGET_SEL_STR;
 
-const HELPERS = [isVisible, labelOf, labelAround, norm, pickOption, findControl, findCustomSelect,
+const HELPERS = [isVisible, labelOf, labelAround, norm, pickOption, findControls, findCustomSelect,
   setInputValue, selectValue].map(f => f.toString()).join('\n');
 
 const CONSTS = 'const CUSTOM_SEL=' + JSON.stringify(CUSTOM_SEL_STR) + ';' +
-  'const CUSTOM_BOX=' + JSON.stringify(CUSTOM_BOX_STR) + ';';
+  'const CUSTOM_BOX=' + JSON.stringify(CUSTOM_BOX_STR) + ';' +
+  'const WIDGET_SEL=' + JSON.stringify(WIDGET_SEL_STR) + ';' +
+  'const STRIP_SEL=' + JSON.stringify(STRIP_SEL_STR) + ';';
 
 /** 给 page.evaluate 用的自包含表达式 */
 function dumpExpression() {
