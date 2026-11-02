@@ -6,20 +6,25 @@
  *
  * 用法：
  *   node scripts/browser.cjs launch <url>      用 config 里选定的浏览器开窗口（带调试端口）
- *   node scripts/browser.cjs dump              导出当前页所有表单字段（字段名/类型/当前值）
- *   node scripts/browser.cjs fill <json>       逐个填文字框并回读验证
+ *   node scripts/browser.cjs dump              导出当前页所有表单字段（字段名/类型/当前值/下拉选项）
+ *   node scripts/browser.cjs fill <json>       填字：文字框直接填，原生下拉挑选项，都回读验证
  *   node scripts/browser.cjs shot <png>        截图，给用户看当前状态
  *   node scripts/browser.cjs pages             列出所有标签页
  *   node scripts/browser.cjs close             关掉自动化浏览器
  *
  * fill 的 json 格式：
- *   [{"label":"姓名","value":"张三"},{"label":"邮箱","value":"a@b.com"}]
+ *   [{"label":"姓名","value":"张三"},{"label":"学历","value":"硕士"}]
+ *
+ * 下拉的处理边界：
+ *   原生 <select>      —— 唯一命中才选，歧义就报错不猜，选完回读确认
+ *   自定义下拉（antd / element / 北森那类 div 浮层）—— 只识别、不代填，留用户点
  */
 require('./ensure_deps.cjs');
 const { chromium } = require('playwright');
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const ops = require('./page_ops.cjs');
 
 const ROOT = path.resolve(__dirname, '..');
 const PARENT = path.dirname(ROOT);
@@ -128,31 +133,8 @@ async function cmdLaunch(url) {
 async function cmdDump() {
   const browser = await connect();
   const page = await currentPage(browser);
-  const info = await page.evaluate(() => {
-    const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 2 && r.height > 2; };
-    const rows = [];
-    document.querySelectorAll('input,textarea,select').forEach((el, i) => {
-      if (!vis(el)) return;
-      const type = (el.getAttribute('type') || el.tagName).toLowerCase();
-      if (type === 'hidden' || type === 'file') return;
-      // 向上找最近的、只包住这一个控件的容器，拿它的文字当字段名
-      let p = el.parentElement, label = '', d = 0;
-      while (p && d < 6) {
-        const n = p.querySelectorAll('input,textarea,select').length;
-        const t = (p.innerText || '').replace(/\s+/g, ' ').trim();
-        if (n === 1 && t && t.length < 40) { label = t; break; }
-        if (n > 1) break;
-        p = p.parentElement; d++;
-      }
-      rows.push({
-        i, type, label: label.slice(0, 30),
-        placeholder: el.getAttribute('placeholder') || '',
-        value: (el.value || '').toString().slice(0, 40),
-        readonly: el.readOnly ? 'Y' : '',
-      });
-    });
-    return { url: location.href, title: document.title, rows };
-  });
+  // 页内逻辑在 page_ops.cjs，测试脚本用的是同一份
+  const info = await page.evaluate(ops.dumpExpression());
   log(JSON.stringify(info, null, 1));
   process.exit(0);
 }
@@ -163,38 +145,17 @@ async function cmdFill(jsonPath) {
   const browser = await connect();
   const page = await currentPage(browser);
 
-  const result = await page.evaluate((items) => {
-    const out = [];
-    const vis = (el) => { const r = el.getBoundingClientRect(); return r.width > 2 && r.height > 2; };
-    const setVal = (el, v) => {
-      const proto = el.tagName === 'TEXTAREA' ? HTMLTextAreaElement : HTMLInputElement;
-      const setter = Object.getOwnPropertyDescriptor(proto.prototype, 'value').set;
-      setter.call(el, v);
-      el.dispatchEvent(new Event('input', { bubbles: true }));
-      el.dispatchEvent(new Event('change', { bubbles: true }));
-      el.dispatchEvent(new Event('blur', { bubbles: true }));
-    };
-    for (const it of items) {
-      // 按字段名找控件
-      const fi = [...document.querySelectorAll('input,textarea')].filter(vis).find(el => {
-        let p = el.parentElement, d = 0;
-        while (p && d < 6) {
-          const n = p.querySelectorAll('input,textarea,select').length;
-          const t = (p.innerText || '').replace(/\s+/g, ' ').trim();
-          if (n === 1 && t && t.includes(it.label)) return true;
-          if (n > 1) break;
-          p = p.parentElement; d++;
-        }
-        return false;
-      });
-      if (!fi) { out.push({ label: it.label, ok: false, why: '没找到该字段' }); continue; }
-      setVal(fi, it.value);
-      out.push({ label: it.label, ok: fi.value === it.value, got: fi.value.slice(0, 30) });
-    }
-    return out;
-  }, items);
+  // 原生 select 会挑选项并回读；自定义下拉只回「需要用户点」，不尝试
+  const result = await page.evaluate(ops.fillExpression(items));
 
-  result.forEach(r => log((r.ok ? '✓ ' : '✗ ') + r.label + (r.ok ? '' : ' → ' + (r.why || r.got))));
+  result.forEach(r => {
+    if (r.ok) { log('✓ ' + r.label + (r.kind === 'select' ? ' → ' + r.got : '')); return; }
+    log('✗ ' + r.label + ' → ' + (r.why || r.got));
+    if (r.candidates && r.candidates.length) {
+      log('    可选：' + r.candidates.slice(0, 8).join(' / ') +
+          (r.candidates.length > 8 ? ` …共 ${r.candidates.length} 项` : ''));
+    }
+  });
   const bad = result.filter(r => !r.ok).length;
   log(`\n填了 ${result.length - bad} 个，失败 ${bad} 个`);
   process.exit(bad ? 1 : 0);

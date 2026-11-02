@@ -187,7 +187,7 @@ node scripts/browser.cjs shot now.png         # 截图给用户看
 node scripts/browser.cjs close                # 关掉自动化浏览器（不影响你日常那个）
 ```
 
-**下拉、日期、单选留给用户点。提交按钮也由用户按。**
+**原生下拉可以代填**（唯一命中才选，两项都像就报错不猜，选完回读确认）；**自定义下拉、日期、级联、单选留给用户点**。提交按钮也由用户按。
 
 ### 8. 记账
 
@@ -243,7 +243,7 @@ jobfxxk/
 | `recommend.py` | 推荐岗位：拆到单个岗位、排已投、带依据 |
 | `gate.py` | 阶段闸门：进关键阶段前验一遍，不通过就拦 |
 | `fetch_jd.cjs` | 后台读 JD |
-| `browser.cjs` | 浏览器：launch / pages / dump / fill / upload / text / shot / close |
+| `browser.cjs` | 浏览器：launch / pages / dump / fill / upload / text / shot / close（页内逻辑在 `page_ops.cjs`） |
 | `fill_engine.py` | 三道关（字数窗口 / 事实 / 说法）+ Word 替换 + 版面复验 |
 | `lint_draft.py` | 改动校验：新添的数字·日期·奖项有没有出处，有没有夸大词 |
 | `compose.py` | 把经历灌进内置模板，产出 docx 进简历库（不导出 PDF） |
