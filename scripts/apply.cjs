@@ -9,16 +9,23 @@
  *
  * 用法：
  *   node scripts/apply.cjs <岗位详情链接>
- *   node scripts/apply.cjs <链接> --resume "D:/简历库/pdf/xx.pdf"
+ *   node scripts/apply.cjs <链接> --resume "D:/简历库/pdf/xx.pdf" --company "某公司" --expect "用户运营"
  *   node scripts/apply.cjs <链接> --page=campus/detail --login-timeout=180
  *   node scripts/apply.cjs <链接> --json          # 只要机器可读结果
+ *
+ * 它会拦三件事：
+ *   · 传的是母版（没跑过微调的那一份）——除非加 --allow-master
+ *   · 页面上的岗位跟 --expect 对不上（投错岗）
+ *   · 必填还空着 / 简历没挂上 → ready_to_submit=false
  *
  * 它不做的事：不点提交、不点保存、不碰任何自定义下拉。到头来输出一张空字段
  * 体检表——必填空了几个、非必填空了几个，填不填由用户决定。
  *
- * 退出码：0 表单就绪 / 1 需要用户登录 / 2 找不到投递入口 / 3 出错
+ * 退出码：0 表单就绪且可提交 / 1 需要用户登录 / 2 找不到投递入口 /
+ *         3 出错 / 4 传的是母版 / 5 表单就绪但还不能提交
  */
 const path = require('path');
+const fs = require('fs');
 const REPO = 'D:/27秋招/jobfxxk';
 require(path.join(REPO, 'scripts/ensure_deps.cjs'));
 const { chromium } = require('playwright');
@@ -26,6 +33,12 @@ const ops = require(path.join(REPO, 'scripts/page_ops.cjs'));
 
 const APPLY_TEXTS = ['立即投递', '投递', '立即申请', '申请职位', '我要投递'];
 const arg = (name, def) => {
+  // 两种写法都要认：--name=value 和 --name value。
+  // 之前只认等号形式，`--resume "路径"` 会被静默忽略——母版拦截因此形同虚设。
+  const i = process.argv.indexOf('--' + name);
+  if (i >= 0 && i + 1 < process.argv.length && process.argv[i + 1].indexOf('--') !== 0) {
+    return process.argv[i + 1];
+  }
   const hit = process.argv.find(a => a.indexOf('--' + name + '=') === 0);
   return hit ? hit.slice(name.length + 3) : def;
 };
@@ -33,10 +46,67 @@ const arg = (name, def) => {
 const TARGET = process.argv[2];
 const PAGE_HINT = arg('page', '');
 const RESUME = arg('resume', '');
+const EXPECT = arg('expect', '');
+const COMPANY = arg('company', '');
 const LOGIN_TIMEOUT = parseInt(arg('login-timeout', '180'), 10) * 1000;
 const AS_JSON = process.argv.includes('--json');
+const ALLOW_MASTER = process.argv.includes('--allow-master');
 
 function say(...a) { if (!AS_JSON) console.log(...a); }
+
+/** 配置：用来判断传的是不是母版 */
+function cfg() {
+  const cands = [process.env.JOBFXXK_CONFIG,
+    path.join(path.dirname(REPO), 'jobfxxk-data', 'config.json'),
+    path.join(REPO, 'config.json')].filter(Boolean);
+  for (const p of cands) {
+    try { return JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) {}
+  }
+  return {};
+}
+
+/** 传的简历是不是「母版」——没跑过微调的那一份
+
+ * 为什么拦：真实事故是「没跑微调就直接传了母版」，简历和岗位对不上还投出去了。
+ * 文件层面的闸门（gate 8）只看这一版存在，看不出你传的是哪一份。
+ */
+function isMaster(file) {
+  const c = cfg();
+  const norm = p => (p || '').replace(/\\/g, '/').toLowerCase();
+  const f = norm(file);
+  return [c.master_docx, c.master_pdf].filter(Boolean).some(m => norm(m) === f);
+}
+
+/** 落一次进度，断了能接上 */
+function saveState(info) {
+  try {
+    const dataDir = process.env.JOBFXXK_DATA
+      || path.join(path.dirname(REPO), 'jobfxxk-data');
+    const p = path.join(dataDir, 'user', 'state.json');
+    let d = {};
+    try { d = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) {}
+    d.phase = '阶段 8 · 表单已就绪，待填/待核';
+    if (info.company) d.company = info.company;
+    d.position = info.position || d.position || '';
+    // 这次没传简历就别把上次的版本名继续挂着，容易让人以为已经传过了
+    d.resume_version = info.resume || '';
+    d.todo = [].concat(
+      (info.required_empty || []).map(x => '必填未填：' + x),
+      (info.optional_empty || []).length ? ['非必填空 ' + info.optional_empty.length + ' 项，等用户定'] : [],
+      ['填完主要区块让用户点「暂存」，否则换标签就没了']);
+    // 用本地时间，和 state.py 写出来的格式保持一致
+    const off = -new Date().getTimezoneOffset();
+    const sign = off >= 0 ? '+' : '-';
+    const pad = n => String(Math.floor(Math.abs(n))).padStart(2, '0');
+    const t = new Date();
+    d.updated_at = t.getFullYear() + '-' + pad(t.getMonth() + 1) + '-' + pad(t.getDate()) +
+      'T' + pad(t.getHours()) + ':' + pad(t.getMinutes()) + ':' + pad(t.getSeconds()) +
+      sign + pad(off / 60) + ':' + pad(off % 60);
+    fs.mkdirSync(path.dirname(p), { recursive: true });
+    fs.writeFileSync(p, JSON.stringify(d, null, 1), 'utf8');
+    return p;
+  } catch (e) { return ''; }
+}
 
 /** 等页面「安静」：字段数和正文长度连续两次不变，最多等 maxMs */
 async function settled(page, maxMs) {
@@ -162,6 +232,13 @@ async function upload(page, file) {
   }
 
   // ---- 上传简历（先传，解析会重置表单）----
+  if (RESUME && isMaster(RESUME) && !ALLOW_MASTER) {
+    console.error('✗ 你给的是母版（未经微调的那一份）：' + RESUME);
+    console.error('  这一版没有针对本岗位改过，而版面/内容是按岗位派生的。');
+    console.error('  先用 fill_engine 生成这一版，或者确认就要用母版再加 --allow-master。');
+    process.exit(4);
+  }
+
   let up = { ok: false, why: '没传' };
   if (RESUME) {
     up = await upload(page, RESUME);
@@ -170,13 +247,45 @@ async function upload(page, file) {
   }
 
   const info = await page.evaluate(ops.dumpExpression());
+
+  // 岗位对不上就是投错岗。申请页的 document.title 往往只是「投递简历」，
+  // 所以用正文里出没出现目标岗位名来判断，比标题可靠。
+  const pageText = await page.evaluate(() => document.body.innerText).catch(() => '');
+  const title = await page.evaluate(() => {
+    const h = [...document.querySelectorAll('h1,h2,h3')]
+      .map(el => (el.innerText || '').replace(/\s+/g, ' ').trim())
+      .filter(t => t && t.length < 30);
+    return h.length ? h[0] : (document.title || '').trim();
+  }).catch(() => '');
+  const expectOk = !EXPECT || pageText.indexOf(EXPECT) >= 0;
+
+  // 简历挂没挂上：看页面上有没有文件名或「上次上传」这类痕迹
+  const resumePresent = up.ok || await page.evaluate(() =>
+    /\.(pdf|docx?|doc)\b/i.test(document.body.innerText) ||
+    document.body.innerText.indexOf('上次上传') >= 0).catch(() => false);
+
+  const audit = info.audit || {};
+  const ready = audit.required_empty_count === 0 && resumePresent && expectOk;
+
+  const saved = saveState({
+    company: COMPANY, position: EXPECT || title,
+    resume: RESUME ? path.basename(RESUME) : '',
+    required_empty: audit.required_empty || [],
+    optional_empty: audit.optional_empty || [],
+  });
+
   const out = {
     stage: 'form_ready',
     url: info.url,
+    position_title: title,
+    expect_matched: expectOk,
     resume_uploaded: up.ok,
+    resume_present: resumePresent,
     fields_total: info.rows.length,
     elapsed_ms: Date.now() - t0,
-    audit: info.audit,
+    ready_to_submit: ready,
+    state_saved: saved,
+    audit,
   };
 
   if (AS_JSON) {
@@ -185,7 +294,8 @@ async function upload(page, file) {
   } else {
     console.log('\n表单就绪：' + info.rows.length + ' 个字段，用时 ' +
                 (out.elapsed_ms / 1000).toFixed(1) + 's');
-    const a = info.audit;
+    console.log('  岗位：' + title + (EXPECT ? (expectOk ? '  ✓ 与目标一致' : '  ✗ 和目标「' + EXPECT + '」对不上') : ''));
+    const a = audit;
     if (a.required_empty_count) {
       console.log('  必填还空着 ' + a.required_empty_count + ' 个：' + a.required_empty.join('、'));
     } else {
@@ -195,6 +305,9 @@ async function upload(page, file) {
       console.log('  非必填空着 ' + a.optional_empty_count + ' 个：' + a.optional_empty.join('、'));
       console.log('  （这些我没有代填——信息库里没有的就不编。填不填你定）');
     }
+    if (!resumePresent) console.log('  ✗ 没检测到已上传的简历');
+    console.log('  能否提交：' + (ready ? '✓ 三个条件都满足，等你按提交' : '✗ 还不满足，见上面'));
+    if (saved) console.log('  进度已记录：' + saved);
   }
-  process.exit(0);
+  process.exit(ready ? 0 : 5);
 })().catch(e => { console.error('ERR', e.message); process.exit(3); });

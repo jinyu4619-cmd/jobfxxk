@@ -59,12 +59,40 @@ function norm(s) {
   return (s == null ? '' : String(s)).normalize('NFKC').replace(/\s+/g, '');
 }
 
-/** 这个字段是不是必填：看 required 属性、aria-required、或容器里的星号 */
+/** 这个字段是不是必填
+ *
+ * 三种标法都要认：
+ *   1. required / aria-required 属性（原生表单）
+ *   2. 容器文字里有星号（很多后台系统）
+ *   3. label 或祖先节点带 required 类（飞书招聘：<label class="atsx-form-item-required">，
+ *      星号是 CSS 画的，innerText 里根本没有——只认前两种会漏掉整张表的必填项）
+ */
 function requiredMark(el) {
   if (el.required === true) return 'Y';
   if ((el.getAttribute('aria-required') || '') === 'true') return 'Y';
+
+  // 自定义下拉的外层容器本身没有 id，真正带 id 的是里面那个输入框
+  const probe = (el.id ? el : el.querySelector('input,textarea,select'));
+  if (probe && probe.id) {
+    const sel = window.CSS && CSS.escape ? CSS.escape(probe.id) : probe.id;
+    const lab = document.querySelector('label[for="' + sel + '"]');
+    if (lab && /required/i.test(lab.className || '')) return 'Y';
+  }
+
+  // 同一个表单项里的 label：从最近的 form-item 往上找三层，
+  // 因为 label 和控件常常是两个兄弟节点，不在一层里
+  let node = el.closest('[class*="form-item"]');
+  for (let i = 0; node && i < 3; i++) {
+    const lab = node.querySelector('label');
+    if (lab && /required/i.test(lab.className || '')) return 'Y';
+    const up = node.parentElement;
+    node = up && up.closest ? up.closest('[class*="form-item"]') : null;
+  }
+
   let p = el.parentElement, d = 0;
-  while (p && d < 4) {
+  while (p && d < 6) {
+    const cls = (p.className || '').toString();
+    if (/(^|[-_])required([-_]|$)|form-item-required/i.test(cls)) return 'Y';
     const t = (p.innerText || '');
     if (t.length < 60 && t.indexOf('*') >= 0) return 'Y';
     if (p.querySelectorAll('input,textarea,select').length > 1) break;
