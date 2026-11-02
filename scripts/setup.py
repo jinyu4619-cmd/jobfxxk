@@ -68,6 +68,37 @@ def has_pypdf():
     return importlib.util.find_spec('pypdf') is not None
 
 
+def word_available():
+    """不启动 Word，只查注册表——比 COM 快两个数量级，也不弹窗
+
+    没装 Word 不会卡住前面几个阶段，但到「微调导出 PDF」那一步必然失败。
+    等走到那一步才报，用户前面白忙一场，所以在启动时就提醒。
+    """
+    if os.name != 'nt':
+        return ''
+    import winreg
+    for prog, label in (('Word.Application', 'Microsoft Word'),
+                        ('KWPS.Application', 'WPS 文字'),
+                        ('Kwps.Application', 'WPS 文字')):
+        try:
+            winreg.CloseKey(winreg.OpenKey(winreg.HKEY_CLASSES_ROOT, prog))
+            return label
+        except OSError:
+            continue
+    return ''
+
+
+def env_warnings():
+    """不阻塞、但必须让用户早知道的环境问题"""
+    w = []
+    if not word_available():
+        w.append('没检测到 Word / WPS：后面「导出 PDF」那一步会失败，建议先装一个')
+    c = cfg_read()
+    if not (c.get('browser_path') or '').strip():
+        w.append('还没选定浏览器：第一次投递时会从本机已装的浏览器里挑一个')
+    return w
+
+
 def path_or(default_key, default_rel):
     c = cfg_read()
     return p(c.get(default_key)) or os.path.join(DATA_DIR, default_rel)
@@ -115,6 +146,13 @@ def profile_missing_count():
 
 
 def build_state():
+    """对外入口：状态机结论 + 非阻塞提醒"""
+    d = _build_state()
+    d['warnings'] = env_warnings()
+    return d
+
+
+def _build_state():
     done, missing = [], []
 
     node = node_bin()
@@ -411,6 +449,12 @@ def parse_args(argv):
 
 
 def main():
+    # 版本太低的话，后面所有脚本都会以各种奇怪的方式失败，不如在这里直接说清楚
+    if sys.version_info < (3, 9):
+        print('需要 Python 3.9 或更高，现在这台是 %s。' % sys.version.split()[0])
+        print('到 python.org 下新版，安装时记得勾上「Add Python to PATH」。')
+        return 2
+
     argv = sys.argv[1:]
     if not argv or '--check' in argv:
         out(build_state())
