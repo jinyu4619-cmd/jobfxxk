@@ -497,10 +497,27 @@ python scripts/translate_jobs.py           # 约 40 秒，把 optXXX 翻成中�
 
 数据源配置在 `config.json` 的 `job_source` 里（base / app / 三张表 ID）。**换库只改配置，不改代码**——用户给了新表，把 ID 换掉重跑即可。
 
-**筛选三层**：
-1. 字段过滤（届次/学历/城市/截止日期/岗位线），本地跑，不联网
-2. 对剩下的读 JD——**去目标公司招聘官网后台读，不在用户屏幕上开页面**（见 4.3）
-3. 算分排序，取前 N 家
+**筛选用 `recommend.py`，不要用 `filter_jobs.py`**
+
+```bash
+python scripts/recommend.py --top 10                 # 按档案里存的方向
+python scripts/recommend.py --direction mt --city 深圳 --top 10
+```
+
+两个脚本的区别，值得记一下：
+
+- `filter_jobs.py` 把公司那一行当整体，看关键词在不在里面。一家公司写了十几个岗位，只要有一个沾边，整行就算命中——筛出来还得人挑。
+- `recommend.py` 把「岗位列表」拆成一个个岗位逐条打分，自动排掉台账里已投的公司，并且**每条都带依据**。
+
+**岗位库的粒度比想象中粗**：12000 条里，「管培生」620 条、「运营类」91 条、「产品运营类」30 条，但没有一条叫「用户运营」。所以命中分三级，输出里会明确标出来：
+
+| 级别 | 含义 | 怎么用 |
+|---|---|---|
+| ✅ 精确命中 | 岗位名里就是细分职位（如「运营管培生」） | 可以直接往下走 |
+| ⚠️ 类别命中 | 只命中「运营类」这种打包岗位 | **必须先读 JD**，才知道里面有没有你要的方向 |
+| 🔍 推断 | 从经历里的能力映射出来的，没有直接关键词支撑 | 当补充，别当主选 |
+
+**读 JD 是必须的**，尤其类别命中的：去目标公司招聘官网后台读，不在用户屏幕上开页面（见 4.3）。读完把「这个类别下面具体有哪些岗」提炼出来再给用户。
 
 ### 4.3 JD 从哪读
 
@@ -854,7 +871,8 @@ python scripts/verify.py tracker
 | `scripts/make_anchors.py` | 标定模板，生成锚点表与字数窗口 |
 | `scripts/sync_jobs.cjs` | 同步内置岗位库（原始数据） |
 | `scripts/translate_jobs.py` | 把岗位库里的选项 ID 翻成中文 |
-| `scripts/filter_jobs.py` | 按届次/学历/城市/关键词筛岗，出精简清单 |
+| `scripts/filter_jobs.py` | 粗筛：按届次/学历/城市关键词过一遍，看整体盘子 |
+| `scripts/recommend.py` | **推荐主入口**：拆到单个岗位、排掉已投、三级命中带依据 |
 | `scripts/fetch_jd.cjs` | 后台读某条岗位的 JD 正文 |
 | `scripts/browser.cjs` | 浏览器操作：launch / dump / fill / upload / text / shot / pages / close |
 | `scripts/fill_engine.py` | 窗口校验 + Word 替换 + 版面复验 |

@@ -214,7 +214,7 @@ jobfxxk/
 │   ├── 问题库.md              网申字段清单、隐私分级
 │   ├── 岗位推荐.md            数据源、匹配打分、意向获取
 │   └── 投递台账.md            进度跟踪表
-├── scripts/                  23 个脚本（见下表）
+├── scripts/                  24 个脚本（见下表）
 ├── assets/template/          脱敏简历模板（docx + pdf，必须成套）
 ├── config.example.json
 └── package.json
@@ -235,7 +235,8 @@ jobfxxk/
 | `make_anchors.py` | 标定模板，算字数窗口 |
 | `sync_jobs.cjs` | 同步岗位库 |
 | `translate_jobs.py` | 选项 ID 翻译成中文 |
-| `filter_jobs.py` | 按条件筛岗 |
+| `filter_jobs.py` | 粗筛：按届次/学历/城市过一遍 |
+| `recommend.py` | 推荐岗位：拆到单个岗位、排已投、带依据 |
 | `fetch_jd.cjs` | 后台读 JD |
 | `browser.cjs` | 浏览器：launch / pages / dump / fill / upload / text / shot / close |
 | `fill_engine.py` | 窗口校验 + Word 替换 + 版面复验 |
