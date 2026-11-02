@@ -234,7 +234,7 @@ jobfxxk/
 | `build_skill.py` | 打包成 .skill；`--verify` 拿包和仓库逐文件对账（**发布前必跑**） |
 | `profile.py` | 个人档案：静态信息 + 经历库，只问缺的 |
 | `directions.py` | 从经历里推岗位方向，附依据 |
-| `verify.py` | 阶段验收：档案 / 简历 / 版式 / 台账 / 岗位库 / 草稿 |
+| `verify.py` | 阶段验收：档案 / 简历 / 版式 / 台账 / 岗位库 / 草稿；`all` 一次跑完 |
 | `check_config.py` | 逐项检查配置与环境（setup.py 的详细版） |
 | `detect_browsers.py` | 扫描本机浏览器 |
 | `secure_store.py` | 敏感信息 DPAPI 加密存取 |

@@ -13,8 +13,11 @@
 用户说「开始」「帮我投简历」「继续」时：
 
 ```bash
-setup.cmd --check
+setup.cmd --status      # 先看现状：装到哪、几条线、下一步做哪条
+setup.cmd --check       # 再看状态机：现在缺什么
 ```
+
+`--status` 是恢复用的第一条命令，**不要自己翻 state.json 和文档拼上下文**。
 
 **Windows 上永远用 `setup.cmd`，不要直接敲 `python scripts/setup.py`。** 微软商店那个 `python` 是空壳（执行返回 9009），`py` 启动器也可能没装；`setup.cmd` 会自己找能用的解释器，找不到就说人话。
 
@@ -66,7 +69,7 @@ setup.cmd --check
 | 7 | 开官网、用户登录 | `browser.cjs launch` |
 | 8 | 上传简历、填文字框 | `apply.cjs`（一条命令走到表单就绪）、`browser.cjs fill / dump` |
 | 9 | 核对，用户提交 | — |
-| 10 | 写台账 | `write_tracker.py`、`verify.py tracker` |
+| 10 | 写台账 | `write_tracker.py`、`verify.py tracker`（或 `verify.py all` 一次跑全部验收） |
 
 每进入新阶段，先记进度：
 

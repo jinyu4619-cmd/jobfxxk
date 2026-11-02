@@ -232,7 +232,44 @@ def main():
         if len(argv) < 2:
             sys.exit('用法：verify.py draft <要检查的.docx>')
         return check_draft(argv[1])
+    if cmd == 'all':
+        return check_all()
     sys.exit(__doc__)
+
+
+def check_all():
+    """一次跑完所有能自动跑的验收
+
+    为什么要有它：单个检查各管一段，模型得自己记住「该跑哪几个、跑完怎么看」。
+    跑一遍汇总，判断就变成看一个结论，不同模型给出的结论也一致。
+    """
+    results = []
+    for fn in (check_profile, check_resume, check_tracker, check_jobs):
+        # 每个 check_* 直接 print JSON 并返回码；这里改成捕获它的输出
+        import io
+        from contextlib import redirect_stdout
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            fn()
+        try:
+            results.append(json.loads(buf.getvalue()))
+        except ValueError:
+            results.append({'check': fn.__name__, 'ok': False,
+                            'issues': ['输出不是 JSON']})
+
+    failed = [r for r in results if not r.get('ok')]
+    print('=== 验收汇总 ===\n')
+    for r in results:
+        print('%s %s' % ('✓' if r.get('ok') else '✗', r.get('check', '?')))
+        for x in (r.get('issues') or [])[:6]:
+            print('    · ' + str(x))
+    print()
+    print('全部通过。' if not failed else '%d 项没过，按上面的问题逐条修。' % len(failed))
+    print(json.dumps({'ok': not failed,
+                      'checks': [{'check': r.get('check'), 'ok': bool(r.get('ok')),
+                                  'issues': r.get('issues') or []} for r in results]},
+                     ensure_ascii=False, indent=1))
+    return 0 if not failed else 1
 
 
 if __name__ == '__main__':

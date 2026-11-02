@@ -105,7 +105,15 @@ python scripts/setup.py --welcome
 
 ## 阶段 0 · 启动检查（状态机驱动）
 
-用户说「开始」「继续」「帮我投简历」时，**先跑这一条，不要自己判断环境**：
+用户说「开始」「继续」「帮我投简历」时，**先跑这一条看现状**：
+
+```bash
+setup.cmd --status
+```
+
+它会一次说清：装到哪了、几条投递线分别在哪个阶段、岗位库多久没同步、下一步该做哪条。**新会话恢复时先跑它，不要自己去翻 state.json 和文档拼上下文。**
+
+然后跑状态机，判断该问什么：
 
 ```bash
 setup.cmd --check
@@ -1137,7 +1145,7 @@ python scripts/verify.py tracker
 | `scripts/compose.py` | 把经历灌进模板，产出 docx 进简历库（不导出 PDF） |
 | `scripts/profile.py` | 个人档案：静态信息、经历库、逐条确认 |
 | `scripts/directions.py` | 从已确认的经历里推岗位方向，附依据 |
-| `scripts/verify.py` | 阶段验收：档案 / 简历 / 版式 / 台账 / 岗位库 |
+| `scripts/verify.py` | 阶段验收：档案 / 简历 / 版式 / 台账 / 岗位库 / 草稿；`all` 一次跑完并汇总 |
 | `scripts/detect_browsers.py` | 扫描本机已装浏览器，供用户选择 |
 | `scripts/secure_store.py` | 敏感信息 DPAPI 加密存储（save/load/keys/delete） |
 | `scripts/make_anchors.py` | 标定模板，生成锚点表与字数窗口 |

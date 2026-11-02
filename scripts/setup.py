@@ -146,11 +146,79 @@ def profile_missing_count():
         return None
 
 
+def print_status():
+    """一条命令看清现状：装到哪、几条线、每条在哪、下一步做什么
+
+    为什么要有它：恢复到「上次做到哪儿」原本要翻 state.json、git log、记忆文件三处，
+    读完还得自己拼。拼出来的还得一致。这件事机器做比人做快，也比人做准。
+    """
+    st = build_state()
+    line = 'jobfxxk 现状'
+    print(line)
+    print('=' * len(line))
+    print()
+    mark = lambda ok: '✓' if ok else '✗'
+    print('安装：%s' % ('就绪' if st.get('ready') else '未就绪（%s）' % st.get('status', '')))
+    for w in st.get('warnings') or []:
+        print('      ! ' + w)
+    print('数据：%s' % DATA_DIR)
+
+    cache_h = st.get('jobs_cache_hours')
+    if cache_h is None:
+        print('岗位库：还没同步过')
+    else:
+        hint = '（超过 12 小时，筛岗前建议先同步）' if cache_h > 12 else ''
+        print('岗位库：%s 小时前同步%s' % (int(cache_h), hint))
+
+    anchors = path_or('anchors', os.path.join('user', '锚点表.json'))
+    print('简历：母版 %s｜锚点表 %s' % (
+        mark(resume_ready()[0]), mark(os.path.exists(anchors))))
+
+    jobs = jobs_summary()
+    print()
+    if not jobs:
+        print('在投的线：还没有。')
+    else:
+        print('在投的线（%d 条）：' % len(jobs))
+        for i, j in enumerate(jobs, 1):
+            todo = ('｜待办：' + '、'.join(j['todo'][:3])) if j.get('todo') else ''
+            print('  %d. %s｜%s  →  %s%s' % (
+                i, j.get('company') or '（未写公司）', j.get('position') or '（未写岗位）',
+                j.get('phase') or '（未开始）', todo))
+
+    print()
+    if not st.get('ready'):
+        print('下一步：' + (st.get('ask') or '按状态机提示补齐'))
+    elif jobs:
+        todo_any = [j for j in jobs if j.get('todo')]
+        print('下一步：接着做「%s」这条。' % (todo_any[0].get('company') if todo_any else
+                                         jobs[-1].get('company')))
+    else:
+        print('下一步：可以开始找岗或直接投你指定的公司。')
+
+
 def build_state():
     """对外入口：状态机结论 + 非阻塞提醒"""
     d = _build_state()
     d['warnings'] = env_warnings()
     return d
+
+
+def jobs_summary():
+    try:
+        p = os.path.join(DATA_DIR, 'user', 'state.json')
+        if not os.path.exists(p):
+            return []
+        d = json.load(open(p, encoding='utf-8-sig'))
+        jobs = d.get('jobs')
+        if isinstance(jobs, list):
+            return jobs
+        if d.get('company') or d.get('phase'):
+            return [{'company': d.get('company', ''), 'position': d.get('position', ''),
+                     'phase': d.get('phase', ''), 'todo': d.get('todo') or []}]
+    except Exception:
+        pass
+    return []
 
 
 # ---------- 开场白 ----------
@@ -519,6 +587,9 @@ def main():
         return 2
 
     argv = sys.argv[1:]
+    if '--status' in argv:
+        print_status()
+        return 0
     if '--welcome' in argv:
         print(welcome_text())
         return 0
