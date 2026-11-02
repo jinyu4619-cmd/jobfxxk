@@ -22,6 +22,69 @@ sys.stdout.reconfigure(encoding='utf-8')
 HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 
+sys.path.insert(0, HERE)
+try:
+    from paths import DATA_DIR
+except Exception:          # 没有配置时也能打包，只是查不了脱敏名单
+    DATA_DIR = os.path.join(os.path.expanduser('~'), 'jobfxxk-data')
+
+# 个人信息的机械特征：能靠正则抓的
+PII_PATTERNS = [
+    ('手机号', re.compile(r'(?<!\d)1[3-9]\d{9}(?!\d)')),
+    ('身份证号', re.compile(r'(?<!\d)\d{17}[\dXx](?!\d)')),
+    ('邮箱', re.compile(r'[\w.+-]+@[\w-]+\.[\w.]+')),
+]
+# 这几种邮箱不算个人信息
+EMAIL_OK = re.compile(r'@(users\.noreply\.github\.com|noreply|example\.com|github\.com)$', re.I)
+# 文档里本来就该出现的占位值
+FAKE_OK = {'a@b.com', '13800138000', '13000000000', '13900000000'}
+# 行里带这些词，说明是在举例子而不是真信息
+FAKE_HINT = ('示例', '例如', '比如', '格式', '请填写', '占位', 'placeholder',
+             'PLACEHOLDERS', '张三', '某某', 'XXX')
+
+
+def deny_terms():
+    """个人化的词（姓名、学校、公司）放仓库外面，一行一个
+
+    为什么写文件而不是写进代码：把「要脱敏的词」写进公开仓库，本身就是泄露。
+    位置：<数据目录>/user/脱敏名单.txt
+    """
+    p = os.path.join(DATA_DIR, 'user', '脱敏名单.txt')
+    if not os.path.exists(p):
+        return []
+    try:
+        return [l.strip() for l in open(p, encoding='utf-8-sig')
+                if l.strip() and not l.strip().startswith('#')]
+    except OSError:
+        return []
+
+
+def pii_scan(files):
+    """打包前扫一遍：这包是给陌生人看的，不能带个人信息"""
+    problems, terms = [], deny_terms()
+    for f in files:
+        if not f.lower().endswith(('.md', '.py', '.cjs', '.json', '.txt')):
+            continue
+        try:
+            body = open(os.path.join(ROOT, f.replace('/', os.sep)),
+                        encoding='utf-8-sig', errors='replace').read()
+        except OSError:
+            continue
+        for no, line in enumerate(body.splitlines(), 1):
+            if any(h in line for h in FAKE_HINT):
+                continue          # 举例用的行，不算泄露
+            for label, pat in PII_PATTERNS:
+                for m in pat.finditer(line):
+                    if m.group(0) in FAKE_OK:
+                        continue
+                    if label == '邮箱' and EMAIL_OK.search(m.group(0)):
+                        continue
+                    problems.append('%s:%d 疑似%s：%s' % (f, no, label, m.group(0)[:30]))
+            for t in terms:
+                if t in line:
+                    problems.append('%s:%d 命中脱敏名单「%s」' % (f, no, t))
+    return problems[:12]
+
 INCLUDE_DIRS = ['scripts', 'references', 'assets']
 INCLUDE_FILES = ['SKILL.md', 'AGENTS.md', 'README.md', 'LICENSE', 'config.example.json', 'package.json']
 SKIP_DIRS = {'__pycache__', 'node_modules', '.git', 'data', 'user', 'dist', 'docs',
@@ -109,6 +172,10 @@ def check(files):
            or f.startswith('data/') or 'browser-profile' in f]
     if bad:
         problems.append('这些文件不该进包：' + '、'.join(bad[:5]))
+
+    # 最后一道：个人信息扫描。宁可打不出包，也不要发一份带真名/手机号的文档出去。
+    for p in pii_scan(files):
+        problems.append('疑似个人信息：' + p)
     return problems
 
 
