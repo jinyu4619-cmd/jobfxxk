@@ -51,6 +51,18 @@ ALIASES = {
 
 MANUAL_TYPES = {'custom-select', 'date-range', 'radio', 'checkbox', 'select'}
 
+# 这些标签里的「姓名」「电话」指的是别人，不是本人。
+# 2026-11-03 在洽洽上真出过事：basic.name 被推成「亲属姓名」、basic.phone 被推成
+# 「亲属联系方式」，照 auto 桶填下去就是把用户自己填成他爸。子串匹配天生会犯这个错，
+# 只能按语义挡一道：命中下面任何一个词，一律进 ask，永远不进 auto。
+OTHER_PERSON = ('亲属', '紧急联系人', '父母', '父亲', '母亲', '配偶', '监护人',
+                '家庭成员', '家庭电话', '推荐人', '证明人', '介绍人')
+
+
+def is_other_person(label):
+    n = norm(label)
+    return any(k in n for k in OTHER_PERSON)
+
 
 def dig(d, path):
     cur = d
@@ -135,6 +147,10 @@ def main():
             continue
         if (r.get('value') or '').strip():
             continue                      # 系统已经填好了，不用管
+        if is_other_person(label):
+            # 问的是别人，不是本人；库里没有就等用户说，绝不拿本人的信息去顶
+            ask.append({'label': label, 'type': typ})
+            continue
         hit = match(label, idx)
         if hit:
             auto.append({'label': label, 'value': str(hit[1]),
