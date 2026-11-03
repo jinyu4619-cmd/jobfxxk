@@ -30,6 +30,7 @@ ROOT = os.path.dirname(HERE)
 sys.path.insert(0, HERE)
 from paths import CONFIG_PATH, DATA_DIR, REPO
 from nodebin import node_bin as _probe_node, npm_bin as _probe_npm
+from pdf_export import export_pdf as _export_pdf
 
 TEMPLATE_DOCX = os.path.join(REPO, 'assets', 'template', '简历模板.docx')
 TEMPLATE_PDF = os.path.join(REPO, 'assets', 'template', '简历模板.pdf')
@@ -95,6 +96,8 @@ def word_available():
     if os.name != 'nt':
         return ''
     import winreg
+    # WPS 也能导出 PDF，而且装了 WPS 没装 Office 的机器很常见。只认 Word 会把这
+    # 些机器误判成「装不了」，让人白做一轮准备工作。顺序是 Word 优先，其次 WPS。
     for prog, label in (('Word.Application', 'Microsoft Word'),
                         ('KWPS.Application', 'WPS 文字'),
                         ('Kwps.Application', 'WPS 文字')):
@@ -110,7 +113,7 @@ def env_warnings():
     """不阻塞、但必须让用户早知道的环境问题"""
     w = []
     if not word_available():
-        w.append('没检测到 Word / WPS：后面「导出 PDF」那一步会失败，建议先装一个')
+        w.append('没检测到 Word / WPS：导出 PDF 那一步会失败，建议先装一个（WPS 也行）')
     c = cfg_read()
     if not (c.get('browser_path') or '').strip():
         w.append('还没选定浏览器：第一次投递时会从本机已装的浏览器里挑一个')
@@ -414,37 +417,8 @@ def _write_base_cfg(name, docx, pdf, resume_dir):
 
 
 def word_export_pdf(docx, pdf):
-    """用 Word 把 docx 导成 pdf。返回 (ok, 说明)"""
-    ps = '''
-$ErrorActionPreference = "Stop"
-$w = $null; $d = $null
-try {
-  $w = New-Object -ComObject Word.Application
-  $w.Visible = $false; $w.DisplayAlerts = 0
-  $d = $w.Documents.Open("%s", $false, $true)
-  $d.ExportAsFixedFormat("%s", 17)
-  Write-Output ("PAGES=" + $d.ComputeStatistics(2))
-}
-catch { Write-Output ("ERR=" + $_.Exception.Message) }
-finally {
-  if ($d -ne $null) { try { $d.Close(0) } catch {} }
-  if ($w -ne $null) { try { $w.Quit() } catch {} }
-}
-''' % (docx.replace('"', '`"'), pdf.replace('"', '`"'))
-    f = os.path.join(DATA_DIR, 'tmp', '_export.ps1')
-    os.makedirs(os.path.dirname(f), exist_ok=True)
-    open(f, 'w', encoding='utf-8-sig').write(ps)
-    try:
-        r = subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', f],
-                           capture_output=True, text=True, timeout=120)
-    except subprocess.TimeoutExpired:
-        return False, 'Word 超过 120 秒没响应（可能是弹了对话框，或者文档太大）'
-    out = ((r.stdout or '') + (r.stderr or '')).strip()
-    if 'ERR=' in out:
-        return False, out[out.index('ERR='):][:200]
-    if not os.path.exists(pdf):
-        return False, '没生成 PDF'
-    return True, out
+    """用共享的限时 Word COM 导出器，返回 (ok, 说明)。"""
+    return _export_pdf(docx, pdf)
 
 
 def act_set_resume(args):

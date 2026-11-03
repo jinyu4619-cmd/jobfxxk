@@ -50,7 +50,7 @@ Claude Code 放进 `~/.claude/skills/jobfxxk` 就会自动加载。Codex 不需�
 ### 需要什么
 
 - Windows 10 / 11（Mac 和 Linux 还没适配）
-- Microsoft Word，导出 PDF 用；WPS 多数版本也行
+- Microsoft Word 或 WPS，导出 PDF 用（Word 优先，没装 Word 时自动用 WPS）
 - Node.js 20 以上
 - Python 3.9 以上
 - 一份简历的 **Word 版和 PDF 版**
@@ -172,7 +172,7 @@ python scripts/make_anchors.py
 python scripts/fill_engine.py draft.json
 ```
 
-引擎会过三道关 → Word 原地替换 → 导出 PDF → 回搜验证替换真的生效 → 复验页数/首行/末行/行数。
+引擎会过三道关 → Word 原地替换 → 导出 PDF → 回搜验证替换真的生效 → 复验页数/首行/末行/行数。导出只有一条通道：先试 Word 的 COM，没装 Word 就用 WPS。
 
 三道关分别是：字数窗口（超窗的不写）、事实（新添的数字/日期/奖项等级必须在你的经历库或母版简历里有出处）、说法（新添的「业内领先」「唯一」这类最高级说法直接拦，「优秀」「显著提升」这类形容词式自评列出来提醒）。三关全过才动 Word，任何一关不过都不产出文件。
 
@@ -246,9 +246,10 @@ jobfxxk/
 | `gate.py` | 阶段闸门：进关键阶段前验一遍，不通过就拦 |
 | `fetch_jd.cjs` | 后台读 JD |
 | `fill_plan.py` | 填表前算差异：哪些能自动填、哪些库里没有要问用户 |
-| `apply.cjs` | 投递入口：打开岗位→点投递→等登录→传简历→等解析→空字段体检 |
+| `apply.cjs` | 投递入口：打开岗位→点投递→等登录→传简历→等解析→可批量填入已确认计划→空字段体检 |
 | `browser.cjs` | 浏览器：launch / pages / dump / fill / pick / upload / text / shot / close（页内逻辑在 `page_ops.cjs`） |
 | `fill_engine.py` | 三道关（字数窗口 / 事实 / 说法）+ Word 替换 + 版面复验 |
+| `pdf_export.py` | docx 转 pdf：Word 优先、WPS 兜底，限时 + 原子替换 + 导出后自检 |
 | `lint_draft.py` | 改动校验：新添的数字·日期·奖项有没有出处，有没有夸大词 |
 | `compose.py` | 把经历灌进内置模板，产出 docx 进简历库（不导出 PDF） |
 | `write_tracker.py` | 写投递台账、改状态 |
@@ -274,7 +275,7 @@ jobfxxk/
 
 ## 已知限制
 
-- **只支持 Windows + Word**。导出 PDF 走的是 Word 的 COM 接口，Mac、Linux、没装 Office 的机器跑到这一步会停。后面会加 LibreOffice 兜底
+- **PDF 由 Word 或 WPS 导出**（先试 `Word.Application`，再试 `KWPS.Application`，谁先起来用谁）。两者都没装、或 COM 被系统策略禁用时，导出这一步会停，并说明卡在哪一步。Mac 和 Linux 当前不支持
 - **必须 docx 和 pdf 成对**。只有 PDF 的用户没法自动微调，只能用内置模板起步，或者自己用 Word 排一份
 - **岗位库是国内校招表**，覆盖 2027 届应届生岗位。社招、海外用户拿到这份表筛不出东西
 - **验证码、滑块**必须你自己点，自动化过不去
