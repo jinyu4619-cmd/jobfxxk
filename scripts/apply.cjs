@@ -10,6 +10,7 @@
  * 用法：
  *   node scripts/apply.cjs <岗位详情链接>
  *   node scripts/apply.cjs <链接> --resume "D:/简历库/pdf/xx.pdf" --company "某公司" --expect "用户运营"
+ *   node scripts/apply.cjs <链接> --resume "xx.pdf" --fill fill-plan.json
  *   node scripts/apply.cjs <链接> --page=campus/detail --login-timeout=180
  *   node scripts/apply.cjs <链接> --json          # 只要机器可读结果
  *   node scripts/apply.cjs <链接> --no-state      # 试跑用：不写 state.json
@@ -48,6 +49,7 @@ const arg = (name, def) => {
 const TARGET = process.argv[2];
 const PAGE_HINT = arg('page', '');
 const RESUME = arg('resume', '');
+const FILL_PATH = arg('fill', '');
 const EXPECT = arg('expect', '');
 const COMPANY = arg('company', '');
 const LOGIN_TIMEOUT = parseInt(arg('login-timeout', '180'), 10) * 1000;
@@ -57,6 +59,30 @@ const ALLOW_MASTER = process.argv.includes('--allow-master');
 const NO_STATE = process.argv.includes('--no-state');
 
 function say(...a) { if (!AS_JSON) console.log(...a); }
+function withTimeout(promise, ms, message) {
+  let timer;
+  return Promise.race([promise, new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(message)), ms);
+  })]).finally(() => clearTimeout(timer));
+}
+
+function readJsonFile(file) {
+  const bytes = fs.readFileSync(file);
+  let text;
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) {
+    text = new TextDecoder('utf-16le').decode(bytes.subarray(2));
+  } else if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) {
+    text = new TextDecoder('utf-16be').decode(bytes.subarray(2));
+  } else {
+    text = bytes.toString('utf8').replace(/^\uFEFF/, '');
+  }
+  try { return JSON.parse(text); }
+  catch (utf8Error) {
+    // PowerShell may save redirected output as UTF-16LE without a byte-order mark.
+    if (!(bytes.length >= 2 && bytes[0] === 0x7b && bytes[1] === 0x00)) throw utf8Error;
+    return JSON.parse(new TextDecoder('utf-16le').decode(bytes));
+  }
+}
 
 /** 配置：用来判断传的是不是母版。查找规则与 paths.py / config.cjs 完全一致 */
 function cfg() {
@@ -75,6 +101,15 @@ function isMaster(file) {
   return [c.master_docx, c.master_pdf].filter(Boolean).some(m => norm(m) === f);
 }
 
+/** 提前退出也要留痕。
+ *  以前只有「顺利走到表单」才写 state，遇到要登录、找不到投递入口、岗位对不上就
+ *  什么都不写——下一个接手的人（或者换一个模型）完全不知道这次试过、卡在哪儿。
+ *  2026-11-03 上午五家公司一条都没进 state，就是这么来的。 */
+function bail(code, phase) {
+  if (!NO_STATE) saveState({ company: COMPANY, position: EXPECT, phase: phase });
+  process.exit(code);
+}
+
 /** 落一次进度，断了能接上 */
 function saveState(info) {
   try {
@@ -82,7 +117,7 @@ function saveState(info) {
     const p = path.join(dataDir, 'user', 'state.json');
     let d = {};
     try { d = JSON.parse(fs.readFileSync(p, 'utf8')); } catch (e) {}
-    d.phase = '阶段 8 · 表单已就绪，待填/待核';
+    d.phase = info.phase || '阶段 8 · 表单已就绪，待填/待核';
     if (info.company) d.company = info.company;
     d.position = info.position || d.position || '';
     // 这次没传简历就别把上次的版本名继续挂着，容易让人以为已经传过了
@@ -105,18 +140,18 @@ function saveState(info) {
   } catch (e) { return ''; }
 }
 
-/** 等页面「安静」：字段数和正文长度连续两次不变，最多等 maxMs */
+/** 等页面「安静」：只观察短期变化，快速完成时不再固定空等。 */
 async function settled(page, maxMs) {
   const t0 = Date.now();
   let last = '', same = 0;
   while (Date.now() - t0 < maxMs) {
-    const sig = await page.evaluate(() =>
+    const sig = await withTimeout(page.evaluate(() =>
       document.querySelectorAll('input,textarea,select').length + ':' +
-      (document.body.innerText || '').length).catch(() => '');
+      (document.body.innerText || '').length).catch(() => ''), 2500, '页面读取超时').catch(() => '');
     if (sig && sig === last) {
       if (++same >= 2) return true;
     } else { same = 0; last = sig; }
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(180);
   }
   return false;
 }
@@ -130,11 +165,15 @@ async function clickText(page, texts) {
       const box = await loc.nth(i).boundingBox().catch(() => null);
       if (!box || box.width < 2) continue;
       const before = page.context().pages().length;
+      const beforeUrl = page.url();
       await loc.nth(i).click({ timeout: 5000 }).catch(() => {});
-      await page.waitForTimeout(1200);
-      const pages = page.context().pages();
-      // 新开了标签就切过去
-      if (pages.length > before) return pages[pages.length - 1];
+      const deadline = Date.now() + 2500;
+      while (Date.now() < deadline) {
+        const pages = page.context().pages();
+        if (pages.length > before) return pages[pages.length - 1];
+        if (page.url() !== beforeUrl) return page;
+        await page.waitForTimeout(120);
+      }
       return page;
     }
   }
@@ -150,51 +189,77 @@ async function upload(page, file) {
   await inputs.nth(idx).setInputFiles(file);
   const base = path.basename(file);
   let shown = false;
-  for (let i = 0; i < 16; i++) {
-    await page.waitForTimeout(500);
-    shown = await page.evaluate(x => document.body.innerText.indexOf(x) >= 0, base).catch(() => false);
-    if (shown && i >= 1) break;
+  let inputHasFile = false;
+  for (let i = 0; i < 32; i++) {
+    await page.waitForTimeout(250);
+    const state = await page.evaluate(x => ({
+      shown: (document.body.innerText || '').indexOf(x) >= 0,
+      inputHasFile: [...document.querySelectorAll('input[type=file]')].some(el =>
+        el.files && [...el.files].some(f => f.name === x)),
+    }), base).catch(() => ({ shown: false, inputHasFile: false }));
+    shown = state.shown;
+    inputHasFile = state.inputHasFile;
+    if (shown || inputHasFile) break;
   }
-  return { ok: shown, why: shown ? '' : '等了 8 秒没在页面上看到文件名' };
+  return { ok: shown || inputHasFile, shown, inputHasFile,
+    why: shown || inputHasFile ? '' : '8 秒内没有确认文件已挂到页面' };
 }
 
 (async () => {
   if (!TARGET) { console.error('用法: node scripts/apply.cjs <岗位详情链接> [--resume 路径]'); process.exit(3); }
 
+  let fillItems = null;
+  if (FILL_PATH) {
+    let plan;
+    try { plan = readJsonFile(FILL_PATH); }
+    catch (e) { throw new Error('--fill 文件读取失败：' + e.message); }
+    fillItems = Array.isArray(plan) ? plan : (plan && plan.auto);
+    if (!Array.isArray(fillItems) || fillItems.some(x => !x || typeof x.label !== 'string' ||
+        typeof x.value !== 'string' || !x.label.trim())) {
+      throw new Error('--fill 必须是自动填写数组，或包含有效 auto 数组的 JSON 文件');
+    }
+  }
+
   const t0 = Date.now();
-  const browser = await chromium.connectOverCDP('http://127.0.0.1:9222');
+  const timings = {};
+  let mark = t0;
+  let browser;
+  try {
+    browser = await withTimeout(chromium.connectOverCDP('http://127.0.0.1:9222'),
+      6000, 'CDP 在 6 秒内没有响应');
+  } catch (e) {
+    console.error('自动化浏览器连接失败：' + e.message + '。停止本次操作，没有更换或接管其他浏览器。');
+    process.exit(3);
+  }
+  timings.cdp_connect_ms = Date.now() - mark;
+  mark = Date.now();
   const ctx = browser.contexts()[0];
   const pages = ctx.pages();
 
-  // 选页面：优先复用已经打开的申请页，而且挑「内容最多的那一份」。
-  // 为什么：表单内容在内存里，没点过「暂存」服务端草稿就是空的；同名标签可能
-  // 并存一个空白的新草稿和一个填了一半的旧草稿，随便挑一个就可能挑到空的。
-  const applyPages = pages.filter(p => /\/apply/.test(p.url()) || /\/resume\/\d+/.test(p.url()));
+  // 只复用用户明确指定的页面，或与目标链接完全对应的标签。
+  // 不从所有打开的申请页里猜「填得最多」的一页，避免串到另一家公司。
   let page = PAGE_HINT ? pages.find(p => p.url().indexOf(PAGE_HINT) >= 0) : null;
-  if (!page && applyPages.length) {
-    let best = null, bestScore = -1;
-    for (const p of applyPages) {
-      const score = await p.evaluate(() =>
-        [...document.querySelectorAll('input,textarea')]
-          .filter(el => el.value && el.value.trim()).length).catch(() => 0);
-      if (score > bestScore) { bestScore = score; best = p; }
-    }
-    page = best;
-    if (applyPages.length > 1) {
-      say('发现 ' + applyPages.length + ' 个申请页，选了填得最多的那个（' + bestScore + ' 个有值字段）');
-    } else {
-      say('复用已打开的申请页（不重新点投递）');
-    }
+  if (PAGE_HINT && !page) {
+    console.error('没有标签页匹配 --page=' + PAGE_HINT + '；未操作其他申请页。');
+    process.exit(2);
   }
-  if (!page) page = pages.find(p => p.url().indexOf(TARGET.split('?')[0]) >= 0);
+  if (!page) page = pages.find(p => p.url() === TARGET || p.url().split('#')[0] === TARGET.split('#')[0]);
   if (!page) page = await ctx.newPage();
+  page.setDefaultTimeout(5000);
+  page.setDefaultNavigationTimeout(20000);
   await page.bringToFront();
 
   const alreadyOnForm = /\/apply/.test(page.url()) || /\/resume\/\d+/.test(page.url());
   if (!alreadyOnForm && page.url().indexOf(TARGET.split('?')[0]) < 0) {
     await page.goto(TARGET, { waitUntil: 'domcontentloaded', timeout: 60000 }).catch(() => {});
   }
-  await settled(page, 12000);
+  await settled(page, 8000);
+  timings.open_and_settle_ms = Date.now() - mark;
+  let positionObserved = !EXPECT;
+  if (EXPECT) {
+    const initialText = await page.evaluate(() => document.body.innerText).catch(() => '');
+    positionObserved = initialText.indexOf(EXPECT) >= 0;
+  }
   say('打开岗位页：' + (Date.now() - t0) + 'ms');
 
   // ---- 走到申请表单 ----
@@ -212,20 +277,30 @@ async function upload(page, file) {
         if (page.url().indexOf('/login') < 0) break;
       }
       if (page.url().indexOf('/login') >= 0) { stage = 'need_login'; break; }
-      await settled(page, 12000);
+      await settled(page, 8000);
       continue;
     }
 
     const next = await clickText(page, APPLY_TEXTS);
     if (!next) { stage = 'no_apply_button'; break; }
     page = next;
-    await settled(page, 12000);
+    await settled(page, 8000);
   }
 
   if (stage !== 'form_ready') {
     const out = { stage, url: page.url(), elapsed_ms: Date.now() - t0 };
     console.log(AS_JSON ? JSON.stringify(out) : '没走到表单：' + JSON.stringify(out));
-    process.exit(stage === 'need_login' ? 1 : 2);
+    bail(stage === 'need_login' ? 1 : 2,
+         stage === 'need_login' ? '阶段 7 · 等用户登录' : '阶段 7 · 找不到投递入口');
+  }
+
+  const formText = await page.evaluate(() => document.body.innerText).catch(() => '');
+  positionObserved = positionObserved || formText.indexOf(EXPECT) >= 0;
+  if (EXPECT && !positionObserved) {
+    const out = { stage: 'wrong_position', url: page.url(), expected: EXPECT,
+      elapsed_ms: Date.now() - t0 };
+    console.log(AS_JSON ? JSON.stringify(out) : '岗位核对不匹配，未上传简历或填写：' + JSON.stringify(out));
+    bail(2, '阶段 8 · 岗位核对不匹配');
   }
 
   // ---- 上传简历（先传，解析会重置表单）----
@@ -238,31 +313,40 @@ async function upload(page, file) {
 
   let up = { ok: false, why: '没传' };
   if (RESUME) {
+    mark = Date.now();
     up = await upload(page, RESUME);
-    say('上传：' + (up.ok ? '✓ 页面上已出现文件名' : '✗ ' + up.why));
-    await settled(page, 15000);          // 等解析把字段填完
+    say('上传：' + (up.ok ? '✓ 页面已确认文件' : '✗ ' + up.why));
+    await settled(page, 8000);           // 只等字段实际变化并短暂稳定
+    timings.upload_and_parse_ms = Date.now() - mark;
   }
 
+  // Optional one-call batch fill. The file is the reviewed `fill_plan.py` auto array;
+  // it may be the array itself or the complete plan object. Manual controls stay untouched.
+  let fillResults = [];
+  if (FILL_PATH) {
+    if (fillItems.length) fillResults = await page.evaluate(ops.fillExpression(fillItems));
+  }
+
+  mark = Date.now();
   const info = await page.evaluate(ops.dumpExpression());
+  timings.audit_ms = Date.now() - mark;
 
   // 岗位对不上就是投错岗。申请页的 document.title 往往只是「投递简历」，
   // 所以用正文里出没出现目标岗位名来判断，比标题可靠。
-  const pageText = await page.evaluate(() => document.body.innerText).catch(() => '');
   const title = await page.evaluate(() => {
     const h = [...document.querySelectorAll('h1,h2,h3')]
       .map(el => (el.innerText || '').replace(/\s+/g, ' ').trim())
       .filter(t => t && t.length < 30);
     return h.length ? h[0] : (document.title || '').trim();
   }).catch(() => '');
-  const expectOk = !EXPECT || pageText.indexOf(EXPECT) >= 0;
+  const expectOk = positionObserved; // 在岗位详情页或最终表单页核对，并在上传前阻断。
 
-  // 简历挂没挂上：看页面上有没有文件名或「上次上传」这类痕迹
-  const resumePresent = up.ok || await page.evaluate(() =>
-    /\.(pdf|docx?|doc)\b/i.test(document.body.innerText) ||
-    document.body.innerText.indexOf('上次上传') >= 0).catch(() => false);
+  // 只认本次上传已观测到的文件证据，不用页面里任意一个文件名猜。
+  const resumePresent = up.ok;
 
   const audit = info.audit || {};
-  const ready = audit.required_empty_count === 0 && resumePresent && expectOk;
+  const fillOk = fillResults.every(x => x.ok);
+  const ready = audit.required_empty_count === 0 && resumePresent && expectOk && fillOk;
 
   const saved = NO_STATE ? '' : saveState({
     company: COMPANY, position: EXPECT || title,
@@ -277,9 +361,12 @@ async function upload(page, file) {
     position_title: title,
     expect_matched: expectOk,
     resume_uploaded: up.ok,
+    fill_results: fillResults,
+    fill_failed: fillResults.filter(x => !x.ok).map(x => x.label),
     resume_present: resumePresent,
     fields_total: info.rows.length,
     elapsed_ms: Date.now() - t0,
+    timings_ms: timings,
     ready_to_submit: ready,
     state_saved: saved,
     audit,
@@ -291,12 +378,22 @@ async function upload(page, file) {
   } else {
     console.log('\n表单就绪：' + info.rows.length + ' 个字段，用时 ' +
                 (out.elapsed_ms / 1000).toFixed(1) + 's');
+    if (timings.open_and_settle_ms != null) {
+      console.log('  耗时：打开/渲染 ' + (timings.open_and_settle_ms / 1000).toFixed(1) + 's' +
+        (timings.upload_and_parse_ms != null ? '，上传/解析 ' +
+          (timings.upload_and_parse_ms / 1000).toFixed(1) + 's' : '') +
+        (timings.audit_ms != null ? '，体检 ' + (timings.audit_ms / 1000).toFixed(1) + 's' : ''));
+    }
     console.log('  岗位：' + title + (EXPECT ? (expectOk ? '  ✓ 与目标一致' : '  ✗ 和目标「' + EXPECT + '」对不上') : ''));
     const a = audit;
     if (a.required_empty_count) {
       console.log('  必填还空着 ' + a.required_empty_count + ' 个：' + a.required_empty.join('、'));
     } else {
       console.log('  必填项都满了');
+    }
+    if (fillResults.some(x => !x.ok)) {
+      console.log('  自动填写未确认：' + fillResults.filter(x => !x.ok)
+        .map(x => x.label + '（' + x.why + '）').join('；'));
     }
     if (a.optional_empty_count) {
       console.log('  非必填空着 ' + a.optional_empty_count + ' 个：' + a.optional_empty.join('、'));

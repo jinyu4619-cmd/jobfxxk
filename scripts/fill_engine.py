@@ -16,6 +16,7 @@ sys.stdout.reconfigure(encoding='utf-8')
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 from paths import CFG, DATA_DIR          # 先走 paths：它负责把 site-packages 补齐
+from pdf_export import export_pdf as _export_pdf
 from pypdf import PdfReader
 
 
@@ -122,62 +123,31 @@ def check(anchors, old, new):
     return None, len(nospace(new)), None, None, None
 
 
-def ps_escape(s):
-    """PowerShell 双引号字符串里的危险字符"""
-    return (str(s).replace('`', '``').replace('"', '`"')
-            .replace('\r', ' ').replace('\n', ' '))
-
-
 def export_pdf(docx, pdf):
-    """Word COM 只做一件事：把 docx 导出成 PDF
-
-    替换已经在 XML 层做完了（见 docx_fill.py）。这里不碰正文，所以不会破坏格式。
-    只操作自己打开的那个 Word 实例，结束时在 finally 里 Quit；
-    绝不按进程名批量杀 WORD——用户可能开着没保存的文档。
-    """
-    ps = ['''
-$ErrorActionPreference = "Stop"
-$w = $null; $d = $null
-try {
-  $w = New-Object -ComObject Word.Application
-  $w.Visible = $false
-  $w.DisplayAlerts = 0
-  $d = $w.Documents.Open("%s")
-  $d.ExportAsFixedFormat("%s", 17)
-  $pages = $d.ComputeStatistics(2)
-  Write-Output "PAGES=$pages"
-}
-catch {
-  Write-Output ("ERROR=" + $_.Exception.Message)
-}
-finally {
-  if ($d -ne $null) { try { $d.Close(0) } catch {} }
-  if ($w -ne $null) { try { $w.Quit() } catch {} }
-}
-''' % (ps_escape(docx), ps_escape(pdf))]
-
-    os.makedirs(TMP, exist_ok=True)
-    f = os.path.join(TMP, '_export.ps1')
-    open(f, 'w', encoding='utf-8-sig').write('\n'.join(ps))
-    try:
-        r = subprocess.run(['powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', f],
-                           capture_output=True, text=True, timeout=180)
-    except subprocess.TimeoutExpired:
-        return 'ERROR=Word 超过 180 秒没响应，已放弃。可能有对话框挡住了，或者文档太大。'
-    return (r.stdout or '') + (r.stderr or '')
+    """导出走唯一一条通道（Word 优先、WPS 兜底），详见 pdf_export。"""
+    ok, message = _export_pdf(docx, pdf)
+    return message if ok else 'ERROR=' + message
 
 
 def measure(pdf):
     rd = PdfReader(pdf)
     pg = rd.pages[0]
     H = float(pg.mediabox.height)
-    ys = []
-    pg.extract_text(visitor_text=lambda t, cm, tm, fd, fs:
-                    ys.append(round(tm[5], 1)) if t and t.strip() and 20 < tm[5] < H else None)
+    rows = {}
+
+    def collect(text, cm, tm, font, size):
+        if text and text.strip() and 20 < tm[5] < H:
+            y = round(tm[5])
+            rows.setdefault(y, []).append(float(tm[4]))
+
+    pg.extract_text(visitor_text=collect)
+    ys = [float(y) for y in rows]
+    x_lefts = [round(min(rows[y]), 1) for y in sorted(rows, reverse=True)]
     return dict(pages=len(rd.pages),
                 top=max(ys) if ys else 0,
                 bottom=min(ys) if ys else 0,
-                lines=len(set(round(y) for y in ys)))
+                lines=len(rows),
+                x_lefts=x_lefts)
 
 
 def find_draft(argv):
@@ -193,6 +163,14 @@ def find_draft(argv):
         if not a.startswith('--'):
             return a
     return os.path.join(TMP, 'draft.json')
+
+
+def max_x_shift(before, after):
+    """Maximum per-line horizontal text-start drift, or None when line counts differ."""
+    xs_before, xs_after = before.get('x_lefts'), after.get('x_lefts')
+    if xs_before is None or xs_after is None or len(xs_before) != len(xs_after):
+        return None
+    return max((abs(a - b) for a, b in zip(xs_before, xs_after)), default=0.0)
 
 
 def find_allow(argv):
@@ -318,7 +296,8 @@ def main():
             print('  ' + line.strip())
 
     if 'ERROR=' in log:
-        print('\n导出失败。最常见的原因是没装 Word，或者 Word 的 COM 被系统策略禁用了。')
+        print('\n导出失败。请看上面的失败阶段；若 Word.Application 启动时报登录会话错误，')
+        print('请在已登录的 Windows 桌面中用 Word 打开这份 DOCX，再由 Word 另存为 PDF。')
         return 1
     if not os.path.exists(tmp_pdf):
         print('  ✗ 未生成 PDF。检查是不是没装 Word，或 Word 弹出了对话框。')
@@ -342,12 +321,19 @@ def main():
     print(f'  首行 y {a["top"]:.0f} → {b["top"]:.0f}')
     print(f'  末行 y {a["bottom"]:.0f} → {b["bottom"]:.0f}')
     print(f'  行数   {a["lines"]} → {b["lines"]}')
+    x_shift = max_x_shift(a, b)
+    print('  行首 x 最大偏移 ' + (f'{x_shift:.1f} pt' if x_shift is not None else '无法比较'))
     same = (a['pages'] == b['pages'] and abs(a['top'] - b['top']) <= 2
-            and abs(a['bottom'] - b['bottom']) <= 2 and a['lines'] == b['lines'])
+            and abs(a['bottom'] - b['bottom']) <= 2 and a['lines'] == b['lines']
+            and x_shift is not None and x_shift <= 2)
     print('  结论：' + ('版式未变 ✓' if same else '版式有位移 ✗'))
     if a['lines'] != b['lines']:
         print('  ⚠ 行数变了（%d → %d），说明有段落折行或缩行了——即使其余三项没动，'
               '也要按「版式动了」处理，回去压字数重做。' % (a['lines'], b['lines']))
+
+    if not same:
+        print('  ✗ 版式复验未通过，不会把 DOCX 或 PDF 写入简历库。')
+        return 1
 
     docx_dir, pdf_dir = out_dirs()
     os.makedirs(docx_dir, exist_ok=True)
@@ -359,6 +345,19 @@ def main():
     shutil.copy2(tmp_docx, out_docx)
     shutil.copy2(tmp_pdf, out_pdf)
     print(f'\n产出：\n  {out_docx}\n  {out_pdf}')
+
+    # 落一次进度。不写的话，下一个接手的人（或换一个模型）只能靠翻文件猜做到哪一步——
+    # 2026-11-03 上午五家公司一条 state 都没有，--status 至今还指着昨天。
+    try:
+        from state import load as _st_load, save as _st_save, upsert as _st_upsert
+        company, _, position = out_name.partition(' ')
+        d = _st_load()
+        _st_upsert(d, company or out_name, position, {
+            'phase': '阶段 6 · 简历已微调，待确认', 'resume': out_name})
+        _st_save(d)
+        print('  进度已记：阶段 6 · 简历已微调，待确认')
+    except Exception as e:
+        print('  （进度没写进去：%s）' % e)
     return 0
 
 
