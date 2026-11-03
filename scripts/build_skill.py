@@ -190,9 +190,22 @@ def sha1_bytes(b):
 # 内容一模一样，哈希却变了——对账会报一堆假漂移，报几次就没人信这个检查了。
 TEXT_EXT = {'.md', '.py', '.cjs', '.json', '.txt', '.yml', '.yaml', '.example'}
 
+# 批处理反过来，必须统一成 CRLF。
+# 为什么：裸 LF 的 .cmd 在 cmd.exe 里，if (...)、goto、for 这类带括号的块会被
+# 按行拆错，整段脚本报错跑不下去。GitHub「Download ZIP」和在非 Windows 环境
+# 打出来的包都可能是 LF，所以在打包这一步强制转成 CRLF——产物对，才算对。
+CRLF_EXT = {'.cmd', '.bat'}
+
+
+def to_crlf(data):
+    return data.replace(b'\r\n', b'\n').replace(b'\n', b'\r\n')
+
 
 def digest(name, data):
-    if os.path.splitext(name)[1].lower() in TEXT_EXT:
+    ext = os.path.splitext(name)[1].lower()
+    if ext in CRLF_EXT:
+        data = to_crlf(data)
+    elif ext in TEXT_EXT:
         data = data.replace(b'\r\n', b'\n')
     return sha1_bytes(data)
 
@@ -274,7 +287,14 @@ def main():
     out = os.path.join(dist, 'jobfxxk.skill')
     with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
         for f in files:
-            z.write(os.path.join(ROOT, f.replace('/', os.sep)), f)
+            src = os.path.join(ROOT, f.replace('/', os.sep))
+            if os.path.splitext(f)[1].lower() in CRLF_EXT:
+                # 批处理强制写 CRLF：包是发给别人用的，不能指望对方的检出环境
+                # 会自动转换换行。裸 LF 的 .cmd 到 cmd.exe 里就是一堆语法错。
+                with open(src, 'rb') as fh:
+                    z.writestr(f, to_crlf(fh.read()))
+            else:
+                z.write(src, f)
     size = os.path.getsize(out) / 1024 / 1024
     print(f'\n已生成：{out}（{size:.1f}MB）')
     print('发布方式：把这个文件挂到 GitHub Release，用户下载后点「保存技能」。')

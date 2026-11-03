@@ -169,6 +169,15 @@ def print_status():
     为什么要有它：恢复到「上次做到哪儿」原本要翻 state.json、git log、记忆文件三处，
     读完还得自己拼。拼出来的还得一致。这件事机器做比人做快，也比人做准。
     """
+    # 第一次用：开场白挂在这里，而不是靠模型记得先跑 --welcome。
+    # 文档只是上下文，模型可以不照做；status 是恢复流程里必跑的那条，
+    # 挂在它上面，开场白才一定会出现。
+    if _first_use():
+        print(WELCOME_FIRST)
+        print()
+        print('-' * 46)
+        print()
+
     st = build_state()
     line = 'jobfxxk 现状'
     print(line)
@@ -280,6 +289,11 @@ def load_state():
         return json.load(open(p, encoding='utf-8-sig'))
     except Exception:
         return {}
+
+
+def _first_use():
+    """还没写过配置 = 第一次用。开场白只在这一次出现，之后不重复。"""
+    return not os.path.exists(CFG_PATH)
 
 
 def welcome_text():
@@ -640,7 +654,12 @@ def main():
         print(welcome_text())
         return 0
     if not argv or '--check' in argv:
-        out(build_state())
+        st = build_state()
+        if _first_use():
+            # 让开场白跟着状态机一起吐出来。模型本来就会被要求「把 ask 念给用户」，
+            # 多一个 say 字段，它不用再记得单独跑 --welcome。
+            st['say'] = WELCOME_FIRST
+        out(st)
         return 0
     if '--apply' in argv:
         i = argv.index('--apply')
