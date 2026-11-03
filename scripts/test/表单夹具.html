@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="zh">
+<meta charset="utf-8">
+<title>表单夹具 · 国内 ATS 形状</title>
+<style>
+  body { font: 14px/1.6 "Microsoft YaHei", sans-serif; padding: 24px; }
+  .el-form-item { margin: 14px 0; position: relative; }
+  .el-form-item__label { display: inline-block; width: 120px; color: #333; }
+  .el-input__inner { width: 240px; padding: 4px 6px; border: 1px solid #ccc; }
+  .el-select { display: inline-block; position: relative; width: 240px; }
+  .el-select .el-input__inner { cursor: pointer; }
+  .el-select-dropdown { display: none; position: absolute; left: 0; top: 28px; z-index: 9;
+    width: 240px; max-height: 180px; overflow: auto; background: #fff; border: 1px solid #bbb; box-shadow: 0 2px 8px rgba(0,0,0,.12); }
+  .el-select-dropdown.open { display: block; }
+  .el-select-dropdown__item { padding: 4px 8px; cursor: pointer; }
+  .el-select-dropdown__item:hover { background: #f2f6fc; }
+  .require { color: #e64c4c; }
+  .card { border: 1px solid #e0e0e0; padding: 12px; margin-top: 20px; }
+  .card-title { font-weight: 700; }
+  .panel { display: none; margin-top: 10px; }
+  .panel.open { display: block; }
+</style>
+
+<div class="el-form-item">
+  <label class="el-form-item__label" for="f-name">姓名<span class="require">*</span></label>
+  <input class="el-input__inner" id="f-name" name="name" type="text">
+</div>
+
+<div class="el-form-item">
+  <label class="el-form-item__label">性别<span class="require">*</span></label>
+  <div class="el-select" data-label="性别">
+    <input class="el-input__inner" readonly placeholder="请选择">
+    <div class="el-select-dropdown">
+      <div class="el-select-dropdown__item">女</div>
+      <div class="el-select-dropdown__item">男</div>
+    </div>
+  </div>
+</div>
+
+<div class="el-form-item">
+  <label class="el-form-item__label">学位<span class="require">*</span></label>
+  <div class="el-select" data-label="学位">
+    <input class="el-input__inner" readonly placeholder="请选择">
+    <div class="el-select-dropdown">
+      <div class="el-select-dropdown__item">硕士</div>
+      <div class="el-select-dropdown__item">硕士</div>
+      <div class="el-select-dropdown__item">学士</div>
+    </div>
+  </div>
+</div>
+
+<div class="el-form-item">
+  <label class="el-form-item__label">出生日期<span class="require">*</span></label>
+  <input class="el-input__inner el-date-editor" placeholder="请选择日期" type="text">
+</div>
+
+<div class="el-form-item">
+  <label class="el-form-item__label">是否接受外派<span class="require">*</span></label>
+  <div class="el-select" data-label="是否接受外派">
+    <input class="el-input__inner" readonly placeholder="请选择">
+    <div class="el-select-dropdown">
+      <div class="el-select-dropdown__item">是</div>
+      <div class="el-select-dropdown__item">否</div>
+    </div>
+  </div>
+</div>
+
+<div class="el-form-item">
+  <label class="el-form-item__label">申请类型<span class="require">*</span></label>
+  <label><input type="radio" name="apply_type" value="campus"> 校招</label>
+  <label><input type="radio" name="apply_type" value="social"> 社招</label>
+</div>
+
+<div class="card">
+  <div class="card-title">教育经历<span class="require">*</span>
+    <img alt="addIcon" src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw=="
+         style="width:14px;height:14px;cursor:pointer;vertical-align:middle">
+  </div>
+  <div class="panel" id="edu-panel">
+    <div class="el-form-item">
+      <label class="el-form-item__label">学校名称<span class="require">*</span></label>
+      <input class="el-input__inner" placeholder="请输入学校名称">
+    </div>
+    <input type="file" id="hidden-upload" style="display:none">
+    <div style="margin-top:8px">
+      <button type="button">取消</button>
+      <button type="button">提交</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 同一时刻只开一个浮层；点选项后把文字写进触发器，跟 element-ui 行为一致
+  document.querySelectorAll('.el-select').forEach(function (sel) {
+    var trigger = sel.querySelector('input');
+    var drop = sel.querySelector('.el-select-dropdown');
+    trigger.addEventListener('click', function () {
+      var open = drop.classList.contains('open');
+      document.querySelectorAll('.el-select-dropdown').forEach(function (d) { d.classList.remove('open'); });
+      if (!open) drop.classList.add('open');
+    });
+    drop.querySelectorAll('.el-select-dropdown__item').forEach(function (item) {
+      item.addEventListener('click', function () {
+        trigger.value = item.textContent.trim();
+        drop.classList.remove('open');
+      });
+    });
+  });
+  // 日期框：回车即提交输入的内容（模拟 el-date-picker 的确认）
+  var dateInput = document.querySelector('.el-date-editor');
+  dateInput.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); dateInput.blur(); }
+  });
+  // Esc 关闭所有浮层、点空白处也关——element-ui 的真实行为
+  function closeAll() {
+    document.querySelectorAll('.el-select-dropdown').forEach(function (d) { d.classList.remove('open'); });
+  }
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeAll(); });
+  document.addEventListener('click', function (e) {
+    if (!e.target.closest('.el-select')) closeAll();
+  });
+  // 图标按钮展开面板
+  document.querySelector('img[alt="addIcon"]').addEventListener('click', function () {
+    document.getElementById('edu-panel').classList.add('open');
+  });
+</script>
+</html>
