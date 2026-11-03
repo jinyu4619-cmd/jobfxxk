@@ -12,7 +12,10 @@
  */
 
 const OPTION_SELECTOR = '[role="option"], .atsx-select-dropdown li, .ant-select-item-option, ' +
-  '.el-select-dropdown__item, .ivu-select-item, li[class*="option"]';
+  '.el-select-dropdown__item, .ivu-select-item, li[class*="option"], ' +
+  // 北森 zhiye.com 的 phoenix 组件：选项是 ul.phoenix-selectList__list 下的 li，
+  // 没有 role，也没有 option 字样。2026-11-03 实测「政治面貌」点开后一个都匹配不到。
+  '.phoenix-selectList__listItem';
 
 const normText = s => String(s == null ? '' : s).replace(/\s+/g, '');
 
@@ -22,7 +25,10 @@ function choose(options, want) {
 
   const exact = options.filter(o => normText(o.text) === w);
   if (exact.length === 1) return { hit: exact[0], how: 'exact' };
-  if (exact.length > 1) return { err: '多个选项完全同名，不猜', candidates: exact };
+  if (exact.length > 1) {
+    // 文字完全一样，选哪个在界面上没有区别；取第一个并标出来，别让用户白点一次
+    return { hit: exact[0], how: 'exact-dup', dupCount: exact.length };
+  }
 
   const part = options.filter(o => {
     const t = normText(o.text);
@@ -46,11 +52,21 @@ async function pickOnPage(page, ops, items, { waitMs = 200, tries = 15 } = {}) {
     }
 
     await el.click({ timeout: 5000 }).catch(() => {});
-    let n = 0;
-    for (let i = 0; i < tries; i++) {
-      await page.waitForTimeout(waitMs);
-      n = await page.locator(OPTION_SELECTOR + ':visible').count();
-      if (n > 0) break;
+    // 数可见选项；浮层本来就开着时，上面这一下会把它关掉，所以「一个都没有」时
+    // 再点一次开回来。只多这一次，且只在完全没选项时——不会重复去点选项本身。
+    const pollOptions = async () => {
+      let n = 0;
+      for (let i = 0; i < tries; i++) {
+        await page.waitForTimeout(waitMs);
+        n = await page.locator(OPTION_SELECTOR + ':visible').count();
+        if (n > 0) break;
+      }
+      return n;
+    };
+    let n = await pollOptions();
+    if (!n) {
+      await el.click({ timeout: 5000 }).catch(() => {});
+      n = await pollOptions();
     }
     if (!n) {
       out.push({ label: it.label, ok: false, why: '点开了但没看到选项' });
@@ -85,6 +101,7 @@ async function pickOnPage(page, ops, items, { waitMs = 200, tries = 15 } = {}) {
     out.push({
       label: it.label, ok: !!got && normText(got).indexOf(normText(picked.hit.text)) >= 0,
       kind: 'custom-select', got: got, matched: picked.hit.text, how: picked.how,
+      dup: picked.dupCount || undefined,
     });
     await handle.dispose();
   }
