@@ -111,7 +111,12 @@ def check_layout(target):
         issues.append(f'末行位置移了 {a["bottom"]:.0f} → {b["bottom"]:.0f}')
     if a['lines'] != b['lines']:
         issues.append(f'行数变了：{a["lines"]} → {b["lines"]}')
-    return finish('layout', issues, before=a, after=b)
+    x_shift = fill_engine.max_x_shift(a, b)
+    if x_shift is None:
+        issues.append('行首位置无法逐行比较')
+    elif x_shift > 2:
+        issues.append(f'行首横向位置最多偏移 {x_shift:.1f} pt（阈值 2 pt）')
+    return finish('layout', issues, before=a, after=b, max_x_shift=x_shift)
 
 
 # ---------- tracker ----------
