@@ -192,6 +192,8 @@ function dumpInPage() {
       label: labelOf(el),
       placeholder: el.getAttribute('placeholder') || '',
       value: (el.value || '').toString().slice(0, 40),
+      name: el.name || '',
+      checked: /^(radio|checkbox)$/.test(type) ? !!el.checked : undefined,
       readonly: el.readOnly ? 'Y' : '',
       required: requiredMark(el),
     };
@@ -218,14 +220,38 @@ function dumpInPage() {
     if (seen.indexOf(box) >= 0) return;
     if (!isVisible(box)) return;
     seen.push(box);
+    // 值在里层 input 的 value 上（element-ui、北森都是 readonly input 显示已选文字），
+    // 而 innerText 往往只有字段名。只看 innerText 会把「已经选好」的判成空——
+    // 2026-11-03 在测试夹具上就这么误报了三个下拉，体检说必填还空着，其实早填上了。
+    const inp = box.querySelector('input');
+    const fallback = (box.innerText || '').replace(/\s+/g, ' ').trim();
+    const shown = (inp ? (inp.value || '') : fallback).trim().slice(0, 40);
     rows.push({
       i: rows.length,
       type: 'custom-select',
       label: labelAround(box) || (el.getAttribute('aria-label') || ''),
-      value: (box.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 40),
+      value: shown,
       required: requiredMark(box),
-      empty: !(box.innerText || '').replace(/\s+/g, '').trim(),
+      empty: !shown.replace(/\s+/g, '') || /^(请选择|请输入)/.test(shown),
       note: '自定义下拉：选项在浮层里，需要用户点',
+    });
+  });
+
+  // 无文字的图标按钮（「添加」这类）。2026-11-03 两次栽在这上面：dump 看不见它们，
+  // 我就断定「这一页没有添加入口」，其实娃哈哈的教育/工作/项目/简历全是
+  // <img alt="addIcon">。这类元素不进 audit（它们不是字段），只作提示列出来。
+  document.querySelectorAll('img[alt],button[aria-label],[role="button"][aria-label]').forEach(el => {
+    const alt = (el.getAttribute('alt') || el.getAttribute('aria-label') || '').trim();
+    if (!alt || !isVisible(el)) return;
+    const box = el.closest('.EditorCard,.card,section,.el-form-item,.el-card') || el.parentElement;
+    rows.push({
+      i: rows.length,
+      type: 'icon-button',
+      label: alt,
+      value: '',
+      context: box ? (box.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 30) : '',
+      empty: false,
+      note: '无文字按钮：点它可能展开被折叠的区块或新增一行',
     });
   });
 
@@ -255,15 +281,32 @@ function dumpInPage() {
 
   // 体检：空着的字段分必填/非必填两类。
   // 非必填且信息库里没有的，不代填，只报给用户让他自己决定。
-  const skip = { radio: 1, checkbox: 1, hidden: 1, file: 1 };
+  const skip = { hidden: 1, file: 1 };
   const reqEmpty = [], optEmpty = [];
   rows.forEach(r => {
     if (skip[r.type] || !r.empty) return;
+    if (r.type === 'radio' || r.type === 'checkbox') return; // audited as a group below
     (r.required === 'Y' ? reqEmpty : optEmpty).push(r.label || ('未命名字段#' + r.i));
+  });
+
+  const choices = new Map();
+  rows.filter(r => r.type === 'radio' || r.type === 'checkbox').forEach(r => {
+    const key = r.type + ':' + (r.name || r.label || ('#' + r.i));
+    if (!choices.has(key)) choices.set(key, { label: r.label || ('未命名字段#' + r.i),
+      required: false, checked: false });
+    const group = choices.get(key);
+    group.required = group.required || r.required === 'Y';
+    group.checked = group.checked || r.checked === true;
+  });
+  choices.forEach(group => {
+    if (group.checked) return;
+    (group.required ? reqEmpty : optEmpty).push(group.label);
   });
 
   return {
     url: location.href, title: document.title, rows,
+    // 有没有「打开着、已经填了值、但还没点保存」的编辑面板——切区块前先看这个
+    unsaved_panel: panelScanInPage(),
     audit: {
       required_empty: reqEmpty,
       optional_empty: optEmpty,
@@ -368,6 +411,45 @@ function boxTextExpression(label) {
     ')(' + JSON.stringify(label) + ');})()';
 }
 
+/** 扫「打开着的编辑面板」：页面上有没有正在编辑、且已经填了值的一区块。
+ *  为什么需要：娃哈哈那种分节编辑器是内存态，不点保存就切到下一块，前一块整个消失。
+ *  2026-11-03 就这样丢了 13 项。切之前先问一句这个，比事后重填便宜得多。
+ *
+ *  做法是**从「保存按钮」往上找**最近的、带输入框的容器，而不是从页面往下扫——
+ *  往下扫会把整个页面当成一个面板（洽洽实测报「首页，已填 31 项」，天天报警等于没报）。
+ *  输入框超过 20 个的按整页表单处理，不算「一块」，只在 note 里提一句。 */
+function panelScanInPage() {
+  const SAVE = /^(提交|保存|确定|暂存)$/;
+  const panels = [];
+  const seenEl = [];
+  [...document.querySelectorAll('button,span,a,div')].forEach(btn => {
+    if (btn.children.length || !isVisible(btn) || !SAVE.test((btn.innerText || '').trim())) return;
+    let box = btn.parentElement, depth = 0;
+    while (box && depth < 6) {
+      const inputs = [...box.querySelectorAll('input,textarea')].filter(isVisible);
+      if (inputs.length) break;
+      box = box.parentElement; depth++;
+    }
+    if (!box || seenEl.indexOf(box) >= 0) return;
+    seenEl.push(box);
+    const inputs = [...box.querySelectorAll('input,textarea')].filter(isVisible);
+    const filled = inputs.filter(el => (el.value || '').trim()).length;
+    if (!filled) return;
+    const title = ((box.innerText || '').split('\n')[0] || '').trim().slice(0, 20);
+    panels.push({
+      title: title, filled: filled, total: inputs.length,
+      button: (btn.innerText || '').trim(),
+      scope: inputs.length > 20 ? 'page' : 'block',
+    });
+  });
+  // 只报「一块」，整页表单不算；整页的单独放在 page_scope 里让人知道，但不拦
+  const blocks = panels.filter(p => p.scope === 'block').sort((a, b) => b.filled - a.filled);
+  const pages = panels.filter(p => p.scope === 'page');
+  if (blocks.length) return Object.assign({ found: true }, blocks[0]);
+  if (pages.length) return { found: false, page_scope: pages[0] };
+  return { found: false };
+}
+
 // ---------- 拼成能在页面里独立执行的表达式 ----------
 
 const CUSTOM_SEL_STR = '[role="combobox"],[aria-haspopup="listbox"],.ant-select,.el-select,' +
@@ -380,7 +462,8 @@ const WIDGET_SEL_STR = 'input,textarea,select,' + CUSTOM_SEL_STR + ',[class*="da
 const STRIP_SEL_STR = WIDGET_SEL_STR;
 
 const HELPERS = [isVisible, labelOf, labelAround, norm, requiredMark, pickOption, findControls,
-  findCustomSelect, setInputValue, selectValue, widgetBoxInPage].map(f => f.toString()).join('\n');
+  findCustomSelect, setInputValue, selectValue, widgetBoxInPage, panelScanInPage]
+  .map(f => f.toString()).join('\n');
 
 const CONSTS = 'const CUSTOM_SEL=' + JSON.stringify(CUSTOM_SEL_STR) + ';' +
   'const CUSTOM_BOX=' + JSON.stringify(CUSTOM_BOX_STR) + ';' +
@@ -397,8 +480,12 @@ function fillExpression(items) {
     'var items=' + JSON.stringify(items) + ';return (' + fillInPage.toString() + ')(items);})()';
 }
 
+function panelExpression() {
+  return '(function(){' + HELPERS + CONSTS + 'return (' + panelScanInPage.toString() + ')();})()';
+}
+
 module.exports = {
-  dumpExpression, fillExpression, widgetExpression, boxTextExpression,
+  dumpExpression, fillExpression, widgetExpression, boxTextExpression, panelExpression,
   // 留出可单独调用的版本，方便别处复用或单测
-  dumpInPage, fillInPage, pickOption, norm, labelOf, isVisible,
+  dumpInPage, fillInPage, pickOption, norm, labelOf, isVisible, panelScanInPage,
 };
