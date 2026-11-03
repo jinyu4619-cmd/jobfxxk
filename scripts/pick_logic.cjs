@@ -39,7 +39,28 @@ function choose(options, want) {
   return { err: '选项里没有这一项', candidates: options };
 }
 
-async function pickOnPage(page, ops, items, { waitMs = 200, tries = 15 } = {}) {
+/** 收起浮层。北森的 phoenix 不响应 Esc（2026-11-03 实测），
+ *  用户教的：点最左或最右的空白处一下就能退出——所以先找一个真正的空白点再点，
+ *  找不到才退回 Esc。找空白点是为了不误点到侧边导航或链接。 */
+async function closePopup(page) {
+  const pt = await page.evaluate(() => {
+    const w = innerWidth, h = innerHeight;
+    const cands = [[2, Math.round(h / 2)], [w - 3, Math.round(h / 2)],
+                   [Math.round(w / 2), h - 4], [2, 4]];
+    for (const c of cands) {
+      const el = document.elementFromPoint(c[0], c[1]);
+      if (!el) continue;
+      if (/^(HTML|BODY)$/.test(el.tagName)) return c;
+      if (!el.children.length && !(el.textContent || '').trim() && !el.onclick) return c;
+    }
+    return null;
+  }).catch(() => null);
+  if (pt) await page.mouse.click(pt[0], pt[1]).catch(() => {});
+  await page.waitForTimeout(150);
+  await page.keyboard.press('Escape').catch(() => {});
+}
+
+async function pickOnPage(page, ops, items, { waitMs = 120, tries = 10 } = {}) {
   const out = [];
 
   for (const it of items) {
@@ -70,7 +91,7 @@ async function pickOnPage(page, ops, items, { waitMs = 200, tries = 15 } = {}) {
     }
     if (!n) {
       out.push({ label: it.label, ok: false, why: '点开了但没看到选项' });
-      await page.keyboard.press('Escape').catch(() => {});
+      await closePopup(page);
       await handle.dispose();
       continue;
     }
@@ -88,13 +109,15 @@ async function pickOnPage(page, ops, items, { waitMs = 200, tries = 15 } = {}) {
         label: it.label, ok: false, why: picked.err,
         candidates: (picked.candidates || []).map(o => o.text).slice(0, 10),
       });
-      await page.keyboard.press('Escape').catch(() => {});
+      await closePopup(page);
       await handle.dispose();
       continue;
     }
 
     await loc.nth(picked.hit.i).click({ timeout: 5000 }).catch(() => {});
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(250);
+    // 选完之后把浮层收干净，免得下一个字段点开时撞上还开着的那一层
+    await closePopup(page);
 
     const back = await page.evaluate(ops.boxTextExpression(it.label)).catch(() => null);
     const got = back ? String(back.text || back.value || '').trim() : '';

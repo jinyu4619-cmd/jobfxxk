@@ -218,8 +218,35 @@ async function cmdUpload(file) {
   const page = await currentPage(browser);
 
   const inputs = page.locator('input[type=file]');
-  const n = await inputs.count();
-  if (!n) die('这一页没有上传控件');
+  let n = await inputs.count();
+  if (!n) {
+    // 上传控件经常藏在折叠区块里，页面上只露出一个「添加」图标（娃哈哈就是
+    // <img alt="addIcon">）。先看有没有这类图标，点开一次再数；只试这一次，
+    // 还找不到就把图标列出来告诉人该点哪儿，不说「这一页没有上传控件」这种废话。
+    const icons = await page.evaluate(() => [...document.querySelectorAll('img[alt],button[aria-label]')]
+      .filter(el => el.getBoundingClientRect().width > 0)
+      .map(el => {
+        const box = el.closest('.EditorCard,.card,section,.el-card,.el-form-item') || el.parentElement;
+        return {
+          alt: (el.getAttribute('alt') || el.getAttribute('aria-label') || '').trim(),
+          ctx: box ? (box.innerText || '').replace(/\s+/g, ' ').trim().slice(0, 24) : '',
+        };
+      }).filter(o => o.alt));
+    const add = icons.find(o => /add|添加|新增|upload|上传/i.test(o.alt));
+    if (add) {
+      await page.evaluate(alt => {
+        const el = [...document.querySelectorAll('img[alt],button[aria-label]')]
+          .find(x => (x.getAttribute('alt') || x.getAttribute('aria-label') || '').trim() === alt);
+        if (el) el.click();
+      }, add.alt);
+      await page.waitForTimeout(800);
+      n = await inputs.count();
+    }
+    if (!n) {
+      die('页面上一共有 ' + icons.length + ' 个图标按钮，没有任何一个是可选文件的上传控件：\n' +
+          (icons.map(o => '  ' + o.alt + (o.ctx ? '（在「' + o.ctx + '」区块）' : '')).join('\n') || '  （没有找到图标按钮）'));
+    }
+  }
 
   // 简历和证件照都是 file 控件，按路径判断该传哪个
   const isPhoto = /\.(jpe?g|png)$/i.test(file);
@@ -270,6 +297,117 @@ async function cmdPages() {
   process.exit(0);
 }
 
+/** panels —— 有没有「开着、已经填了值、还没保存」的编辑面板。
+ *  切区块之前跑这一条：有就先点保存，没有再往下走。 */
+async function cmdPanels() {
+  const browser = await connect();
+  const page = await currentPage(browser);
+  const info = await withDeadline(page.evaluate(ops.panelExpression()), 15000, '扫编辑面板');
+  log(JSON.stringify(info, null, 1));
+  process.exit(info && info.found ? 1 : 0);
+}
+
+/** 给任意一个 await 加个上限。为什么必须有：page.evaluate 没有默认超时，
+ *  页面一旦卡住（死循环、弹窗、脚本忙），命令就永远不返回——实测卡死过一次
+ *  180 秒，node 进程一直挂着。有了它，最坏情况是「报一句超时然后退出」。 */
+function withDeadline(promise, ms, label) {
+  let timer;
+  const timeout = new Promise((_, reject) => {
+    timer = setTimeout(() => reject(new Error(label + '超过 ' + Math.round(ms / 1000) + ' 秒没返回')), ms);
+  });
+  return Promise.race([promise, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** 日期控件：点开 → 清空 → 逐字敲 → 回车 → 回读。
+ *  element-ui 的日期框是只读 input 加浮层，直接设 value 不触发选中，必须真的敲。
+ *  级联地区不在这里做——选完上一级会重建下一级，追着改容易错位。 */
+async function setDate(page, label, value) {
+  try {
+    const safe = String(label).replace(/"/g, '\\"');
+    const loc = page.locator(`.el-form-item:has-text("${safe}") input`).first();
+    if (!(await loc.count())) return { label, ok: false, why: '没找到日期控件' };
+    await loc.click({ timeout: 5000 }).catch(() => {});
+    await loc.fill('').catch(() => {});
+    await page.keyboard.type(String(value), { delay: 30 });
+    await page.keyboard.press('Enter');
+    await page.waitForTimeout(300);
+    const got = (await loc.inputValue().catch(() => '')) || '';
+    const strip = s => String(s).replace(/[\s\-\/年月日]/g, '');
+    return { label, ok: !!got && strip(got) === strip(value), got };
+  } catch (e) {
+    return { label, ok: false, why: String(e.message || e).slice(0, 80) };
+  }
+}
+
+/**
+ * auto <plan.json> [--page=地址片段] —— 一次进程内把一张表能填的都填完
+ *
+ * 为什么合并成一条：每条 browser.cjs 命令都要重新 require('playwright')（实测 2.9 秒）
+ * 再连一次 CDP（1–2 秒）。一个字段一条命令的话，光进程开销就比干活本身久。
+ *
+ * plan.json 四段，都是可选：
+ *   fill: [{label, value, nth}]   文字框 + 原生 select
+ *   pick: [{label, value}]        自定义下拉（点开 → 读选项 → 唯一命中才点）
+ *   date: [{label, value}]        日期框（逐字敲 + 回车）
+ *   cascade: 不做，留给用户
+ * 失败不中断，最后一并交失败清单——不许为了一个字段把整张表停住。
+ */
+async function cmdAuto(planFile) {
+  if (!planFile) die('用法: auto <plan.json> [--page=地址片段]');
+  const raw = fs.readFileSync(planFile);
+  let text;
+  if (raw.length >= 2 && raw[0] === 0xff && raw[1] === 0xfe) {
+    text = new TextDecoder('utf-16le').decode(raw.subarray(2));
+  } else {
+    text = raw.toString('utf8').replace(/^﻿/, '');
+  }
+  const plan = JSON.parse(text);
+  const fillItems = Array.isArray(plan.fill) ? plan.fill : [];
+  const pickItems = Array.isArray(plan.pick) ? plan.pick : [];
+  const dateItems = Array.isArray(plan.date) ? plan.date : [];
+
+  const browser = await connect();
+  const page = await currentPage(browser);
+  page.setDefaultTimeout(5000);
+  const out = { url: page.url(), fill: [], pick: [], date: [], failed: [] };
+
+  // 每一段都设上限：任何一段卡住都只影响这一段，最后一定退出并给出可读原因。
+  try {
+    if (fillItems.length) {
+      out.fill = await withDeadline(page.evaluate(ops.fillExpression(fillItems)), 20000, '填文字框');
+      await page.waitForTimeout(200);
+    }
+    if (pickItems.length) {
+      out.pick = await withDeadline(pickOnPage(page, ops, pickItems), 45000, '填自定义下拉');
+      await page.waitForTimeout(200);
+    }
+    for (const d of dateItems) {
+      out.date.push(await withDeadline(setDate(page, d.label, d.value), 15000, '填日期「' + d.label + '」')
+        .catch(e => ({ label: d.label, ok: false, why: e.message })));
+    }
+  } catch (e) {
+    out.error = String((e && e.message) || e);
+  }
+
+  for (const stage of ['fill', 'pick', 'date']) {
+    for (const r of out[stage] || []) {
+      if (!r.ok) out.failed.push({ stage: stage, label: r.label, why: r.why || r.got || '' });
+    }
+  }
+
+  // 填完回读一遍，省得再单独跑一次 dump。回读失败不算整体失败，但要说出来。
+  try {
+    const info = await withDeadline(page.evaluate(ops.dumpExpression()), 15000, '回读表单');
+    out.audit = info.audit;
+    if (info.unsaved_panel && info.unsaved_panel.found) out.unsaved_panel = info.unsaved_panel;
+  } catch (e) {
+    out.audit = { error: String((e && e.message) || e) };
+  }
+
+  log(JSON.stringify(out, null, 1));
+  process.exit((out.error || out.failed.length) ? 1 : 0);
+}
+
 (async () => {
   const [cmd, arg] = process.argv.slice(2);
   switch (cmd) {
@@ -277,10 +415,12 @@ async function cmdPages() {
     case 'dump': await cmdDump(); break;
     case 'fill': await cmdFill(arg); break;
     case 'pick': await cmdPick(arg); break;
+    case 'auto': await cmdAuto(arg); break;
     case 'upload': await cmdUpload(arg); break;
     case 'text': await cmdText(arg); break;
     case 'shot': await cmdShot(arg); break;
     case 'pages': await cmdPages(); break;
+    case 'panels': await cmdPanels(); break;
     case 'open': await cmdOpen(arg); break;
     case 'close-tabs': await cmdCloseTabs(arg); break;
     case 'close': {
