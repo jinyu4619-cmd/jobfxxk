@@ -39,6 +39,96 @@ ALL_STATUS = PENDING | ACTIVE | OFFER | CLOSED
 SECTION = '## 投递记录'
 STATS_PREFIX = '> 最后更新'
 
+# ---- 总表模式 ----
+# 用户 2026-11-04 明确「总表是唯一权威」。总表的表结构跟台账不一样：
+# 7 列、按投递日期倒序、顶部还有「一、当前统计」，所以不能拿台账那套直接写。
+MASTER_SECTION = '## 三、在流程中的全部记录'
+MASTER_COLUMNS = ['#', '公司', '岗位', '地点', '投递日期', '状态', '备注']
+MASTER_STAT_LABELS = {'累计投递': '累计投递（实际提交过）', '在流程中': '仍在流程中'}
+
+
+def is_master(text):
+    return any(l.strip().startswith(MASTER_SECTION) for l in text.splitlines())
+
+
+def _master_bounds(lines):
+    head = next((i for i, l in enumerate(lines) if l.strip().startswith(MASTER_SECTION)), None)
+    if head is None:
+        return None, None
+    start = next((i for i in range(head + 1, len(lines)) if lines[i].lstrip().startswith('|')), None)
+    if start is None:
+        return head, None
+    end = start
+    while end < len(lines) and lines[end].lstrip().startswith('|'):
+        end += 1
+    return start, end
+
+
+def _master_rows(lines, start, end):
+    rows = []
+    for i in range(start, end):
+        cells = [c.strip() for c in lines[i].strip().strip('|').split('|')]
+        if not cells or cells[0] in ('#', '') or is_separator(cells):
+            continue
+        rows.append((cells + [''] * len(MASTER_COLUMNS))[:len(MASTER_COLUMNS)])
+    return rows
+
+
+def _master_bump(lines, key, delta):
+    """只按增量改顶部统计的数字，不重算——总表里有些历史条目不在表内，重算会越算越小"""
+    label = MASTER_STAT_LABELS[key]
+    for i, l in enumerate(lines):
+        if l.strip().startswith('|') and label in l:
+            m = re.search(r'\*\*(\d+)\*\*', l)
+            if m:
+                lines[i] = l[:m.start(1)] + str(int(m.group(1)) + delta) + l[m.end(1):]
+            return
+
+
+def master_save(path, lines):
+    open(path, 'w', encoding='utf-8').write('\n'.join(lines) + '\n')
+
+
+def master_add(path, a):
+    lines = open(path, encoding='utf-8-sig').read().splitlines()
+    start, end = _master_bounds(lines)
+    if start is None or end is None:
+        print('总表里找不到「三、在流程中的全部记录」那张表，停手不改文件。')
+        sys.exit(1)
+    rows = _master_rows(lines, start, end)
+    before = len(rows)
+    remark = f'简历：{a.resume}' + (f'；{a.link}' if a.link else '')
+    rows.insert(0, ['', a.company, a.position, a.city or '待确认',
+                    date.today().isoformat(), a.status, remark])
+    rows = sorted(rows, key=lambda r: r[4], reverse=True)      # 稳定排序：同日期新加的在前
+
+    table = ['| ' + ' | '.join(MASTER_COLUMNS) + ' |',
+             '|' + '|'.join(['---'] * len(MASTER_COLUMNS)) + '|']
+    for i, r in enumerate(rows, 1):
+        r[0] = str(i)
+        table.append('| ' + ' | '.join(cell(c) for c in r) + ' |')
+    lines[start:end] = table
+
+    if a.status in ACTIVE:
+        _master_bump(lines, '累计投递', 1)
+        _master_bump(lines, '在流程中', 1)
+    elif a.status not in PENDING:
+        _master_bump(lines, '累计投递', 1)
+
+    master_save(path, lines)
+    return before + 1
+
+
+def master_list(path):
+    lines = open(path, encoding='utf-8-sig').read().splitlines()
+    start, end = _master_bounds(lines)
+    if start is None or end is None:
+        print('总表里找不到那张表。')
+        return
+    for r in _master_rows(lines, start, end):
+        print(f'{r[0]:>3}  {r[1]} · {r[2]}  [{r[5]}]  {r[3]}  {r[4]}')
+
+
 TEMPLATE = f"""# 投递台账
 
 > 最后更新：{{today}} ｜ 累计投递 0 ｜ 待投递 0 ｜ 在流程中 0 ｜ 已终止 0 ｜ offer 0
@@ -170,6 +260,12 @@ def main():
 
     path = ledger_path()
     text = open(path, encoding='utf-8-sig').read() if os.path.exists(path) else ''
+    master = bool(text) and is_master(text)
+
+    if a.list and master:
+        master_list(path)
+        return
+
     rows = read_rows(text)
 
     if a.list:
@@ -208,6 +304,12 @@ def main():
     if a.status not in ALL_STATUS:
         print(f'状态「{a.status}」不认识。可选：{" / ".join(sorted(ALL_STATUS))}')
         sys.exit(1)
+
+    if master:
+        n = master_add(path, a)
+        print(f'已写入总表：{a.company} · {a.position}（{a.status}），现共 {n} 条')
+        print(f'总表：{path}')
+        return
 
     idx = max((int(r[0]) for r in rows if r[0].isdigit()), default=0) + 1
     rows.append([

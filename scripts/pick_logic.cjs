@@ -35,7 +35,15 @@ function choose(options, want) {
     return t && (t.indexOf(w) >= 0 || w.indexOf(t) >= 0);
   });
   if (part.length === 1) return { hit: part[0], how: 'partial' };
-  if (part.length > 1) return { err: '多个选项都像，不猜', candidates: part };
+  if (part.length > 1) {
+    // 部分匹配到多个、但文字一模一样时（同程的「学历类型」就是三个「硕士」），
+    // 选哪个在界面上看不出区别，取第一个并标注候选数；文字不同的仍然拒绝。
+    const first = normText(part[0].text);
+    if (part.every(o => normText(o.text) === first)) {
+      return { hit: part[0], how: 'partial-dup', dupCount: part.length };
+    }
+    return { err: '多个选项都像，不猜', candidates: part };
+  }
   return { err: '选项里没有这一项', candidates: options };
 }
 

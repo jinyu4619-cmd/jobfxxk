@@ -326,6 +326,13 @@ def main():
     same = (a['pages'] == b['pages'] and abs(a['top'] - b['top']) <= 2
             and abs(a['bottom'] - b['bottom']) <= 2 and a['lines'] == b['lines']
             and x_shift is not None and x_shift <= 2)
+    # 显式放行「把原本占 3 行的段落压回 2 行」这类收紧版面的改动。
+    # 只认一种情况：页数不变、上下边界不变、行数减少。行数变多（= 文字撑出去了）仍然拦。
+    if not same and '--reflow-tighten' in argv:
+        if (a['pages'] == b['pages'] and abs(a['top'] - b['top']) <= 2
+                and abs(a['bottom'] - b['bottom']) <= 2 and b['lines'] < a['lines']):
+            same = True
+            print('  ✓ --reflow-tighten 放行：行数 %d → %d，版面收紧而非撑开' % (a['lines'], b['lines']))
     print('  结论：' + ('版式未变 ✓' if same else '版式有位移 ✗'))
     if a['lines'] != b['lines']:
         print('  ⚠ 行数变了（%d → %d），说明有段落折行或缩行了——即使其余三项没动，'
